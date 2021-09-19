@@ -1,2 +1,1 @@
-# common-core
-common-core
+公共核心项目（全局公共函数，classmap，通用工具，核心配置等）

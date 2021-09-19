@@ -1,0 +1,61 @@
+{
+    "name": "dleno/common-core",
+    "type": "library",
+    "description": "common core by dleno(PHP)",
+    "keywords": ["common-core"],
+    "authors": [
+        {
+            "name": "dleno",
+            "email": "dleno@126.com",
+            "homepage": "https://www.dlenos.com",
+            "role": "Maintainer"
+        }
+    ],
+    "require": {
+        "php": ">=7.3",
+        "ext-swoole": ">=4.6",
+        "hyperf/utils": "~2.2.0",
+        "hyperf/config": "~2.2.0",
+        "hyperf/logger": "~2.2.0",
+        "hyperf/redis": "~2.2.0",
+        "hyperf/process": "~2.2.0",
+        "hyperf/http-server": "~2.2.0",
+        "hyperf/snowflake": "~2.2.0",
+        "hyperf/paginator": "~2.2.0",
+        "hyperf/validation": "~2.2.0",
+        "hyperf/json-rpc": "~2.2.0",
+        "hyperf/rpc-client": "~2.2.0",
+        "hyperf/amqp": "~2.2.0",
+        "dleno/hyperf-env-multi": "~2.2.0",
+        "dleno/hyperf-aliyun-acm": "~2.2.0",
+        "symfony/serializer": "^5.0",
+        "symfony/property-access": "^5.0"
+    },
+    "require-dev": {
+        "swoole/ide-helper": "^4.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Dleno\\CommonCore\\": "src/"
+        },
+        "files": [
+            "src/common/Functions.php"
+        ]
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "hyperf": {
+            "config": "Dleno\\CommonCore\\ConfigProvider"
+        }
+    },
+    "bin": [
+    ],
+    "scripts": {
+        "cs-fix": "php-cs-fixer fix $1",
+        "test": "phpunit --colors=always"
+    }
+}
