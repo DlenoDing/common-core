@@ -13,7 +13,7 @@
     ],
     "require": {
         "php": ">=7.3",
-        "ext-swoole": ">=4.6",
+        "ext-swoole": ">=4.7",
         "hyperf/utils": "~2.2.0",
         "hyperf/config": "~2.2.0",
         "hyperf/logger": "~2.2.0",
