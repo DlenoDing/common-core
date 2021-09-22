@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler;
 
+use Hyperf\DbConnection\Db;
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
@@ -24,7 +25,16 @@ class CommonExceptionHandler extends ExceptionHandler
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         //事务回滚
-        Transaction::commonRollBack();
+        if (class_exists('Dleno\\RpcTcc\\Transaction')) {
+            Transaction::commonRollBack();
+        } else {
+            var_dump('no');
+            if (Db::transactionLevel() > 0) {
+                //首次beginTransaction为开始一个事务，后续的每次调用beginTransaction为创建事务保存点。
+                //rollBack回滚也只是回滚到上一个保存点，并不是回滚整个事务
+                Db::rollBack(0);//回滚整个事务
+            }
+        }
         return $response;
     }
 

@@ -21,6 +21,8 @@
         "hyperf/process": "~2.2.0",
         "hyperf/http-server": "~2.2.0",
         "hyperf/snowflake": "~2.2.0",
+        "hyperf/db-connection": "~2.2.0",
+        "hyperf/database": "~2.2.0",
         "hyperf/paginator": "~2.2.0",
         "hyperf/validation": "~2.2.0",
         "hyperf/json-rpc": "~2.2.0",
