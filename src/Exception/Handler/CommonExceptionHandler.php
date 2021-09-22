@@ -28,7 +28,6 @@ class CommonExceptionHandler extends ExceptionHandler
         if (class_exists('Dleno\\RpcTcc\\Transaction')) {
             Transaction::commonRollBack();
         } else {
-            var_dump('no');
             if (Db::transactionLevel() > 0) {
                 //首次beginTransaction为开始一个事务，后续的每次调用beginTransaction为创建事务保存点。
                 //rollBack回滚也只是回滚到上一个保存点，并不是回滚整个事务
