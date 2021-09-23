@@ -37,13 +37,7 @@ class CheckParams
         //构建验证器
         $validationFactory = get_inject_obj(ValidatorFactoryInterface::class);
         $validator         = $validationFactory->make($params, $rules, [], $customAttributes);
-
-        //验证不通过
-        if ($validator->fails()) {
-            $message = $validator->errors()
-                                 ->first();
-            throw new AppException($message);
-        }
+        $validator->validate();
 
         return true;
     }
