@@ -82,9 +82,6 @@ class InitMiddleware implements MiddlewareInterface
         if (get_header_val('Client-Version', 0)) {
             rpc_context_set(RpcContextConf::CLIENT_VERSION, (int)get_header_val('Client-Version', 0));//客户端插件版本
         }
-        if (get_header_val('Client-MerchantId', 0)) {
-            rpc_context_set(RpcContextConf::MERCHANT_ID, (int)get_header_val('Client-MerchantId', 0));//客户端商家ID
-        }
         if (get_header_val('Client-ManagerId', 0)) {
             rpc_context_set(RpcContextConf::MANAGER_ID, (int)get_header_val('Client-ManagerId', 0));//管理员ID
         }
