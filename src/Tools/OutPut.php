@@ -2,7 +2,8 @@
 
 namespace Dleno\CommonCore\Tools;
 
-use Hyperf\Utils\Context;
+use Dleno\CommonCore\Conf\GlobalConf;
+use Dleno\CommonCore\Tools\Check\CheckVal;
 use Dleno\CommonCore\Conf\RcodeConf;
 
 /**
@@ -102,15 +103,15 @@ class OutPut
                 //返回数据做字符串处理
                 $val = is_numeric($val) ? "{$val}" : $val;
                 $val = is_null($val) ? "" : $val;
-                $val = is_bool($val) ? ($val ? 'true' : 'false') : $val;
+                $val = is_bool($val) ? ($val ? 1 : 0) : $val;
                 //统一时间转换为时间戳
-                /*if (strpos(strtolower($key), 'time') !== false) {
+                if (strpos(strtolower($key), 'time') !== false) {
                     if (CheckVal::isDateTime($val)) {
                         $val = strtotime($val).'';
                     } elseif ($val == GlobalConf::DEFAULT_DATE_TIME || empty($val)) {
                         $val = '0';
                     }
-                }*/
+                }
 
                 $val = htmlspecialchars_decode($val, ENT_QUOTES);
             }

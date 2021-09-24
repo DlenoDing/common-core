@@ -235,4 +235,21 @@ class ModelBuilder extends Builder
             'pager' => $pager,
         ];
     }
+
+    /**
+     * @param $columns
+     * @param $text
+     * @param null $mode
+     * @return $this
+     */
+    public function whereFullText($columns, $text, $boolMode = false)
+    {
+        if (is_array($columns)) {
+            $columns = join(',', $columns);
+        }
+        $text = addslashes($text);
+        $boolMode = $boolMode?' IN BOOLEAN MODE':'';
+        $this->whereRaw("MATCH ($columns) AGAINST ('{$text}'{$boolMode})");
+        return $this;
+    }
 }
