@@ -252,4 +252,17 @@ class ModelBuilder extends Builder
         $this->whereRaw("MATCH ($columns) AGAINST ('{$text}'{$boolMode})");
         return $this;
     }
+
+    /**
+     * Delete a record from the database.
+     */
+    public function delete()
+    {
+        $table = $this->getModel()->getTable('');
+        if (!empty($table)) {
+            $this->from($table);
+        }
+
+        return parent::delete();
+    }
 }
