@@ -26,6 +26,11 @@ class DcsLock
         while ($result instanceof \Closure) {
             $result = $result();
         }
+        if ($result) {
+            defer(function () use ($lockKey, $uuid){
+                self::unlock($lockKey, $uuid);
+            });
+        }
         return $result;
     }
 
