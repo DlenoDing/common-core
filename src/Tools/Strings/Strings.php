@@ -4,17 +4,22 @@ namespace Dleno\CommonCore\Tools\Strings;
 
 class Strings
 {
+    //随机字符类型
+    const RAND_TYPE_ALL    = 1;//所有
+    const RAND_TYPE_NUM    = 2;//数字
+    const RAND_TYPE_LETTER = 3;//字母
+
     /**
      * 随机生成指定长度的字符串
      * @return string
      */
-    public static function makeRandStr($len = 6, $type = 'all')
+    public static function makeRandStr($len = 6, $type = self::RAND_TYPE_ALL)
     {
-        if ($type == 'all') {
+        if ($type == self::RAND_TYPE_ALL) {
             $chars = 'abcdefghijklmnpqrstuvwxyz0123456789';
-        } elseif ($type == 'num') {
+        } elseif ($type == self::RAND_TYPE_NUM) {
             $chars = "0123456789";
-        } elseif ($type == 'letter') {
+        } elseif ($type == self::RAND_TYPE_LETTER) {
             $chars = "abcdefghijklmnpqrstuvwxyz";
         }
         mt_srand((double)microtime() * mt_rand(1000000, 9999999) * getmypid());
