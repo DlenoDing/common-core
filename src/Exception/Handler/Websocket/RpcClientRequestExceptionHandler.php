@@ -9,7 +9,7 @@ use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\JsonRpc\ResponseBuilder;
 use Hyperf\RpcClient\Exception\RequestException;
 use Hyperf\Utils\Coroutine;
-use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
+use Dleno\CommonCore\Annotation\WsExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Exception\AppException;
 use Dleno\CommonCore\Tools\Logger;
@@ -27,7 +27,7 @@ use Throwable;
 class RpcClientRequestExceptionHandler extends ExceptionHandler
 {
     /**
-     * @ExceptionHandlerLog()
+     * @WsExceptionHandlerLog()
      * Handle the exception, and return the specified result.
      * @param RequestException $throwable
      * @param ResponseInterface $response

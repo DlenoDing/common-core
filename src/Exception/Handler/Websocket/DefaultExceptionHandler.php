@@ -6,7 +6,7 @@ namespace Dleno\CommonCore\Exception\Handler\Websocket;
 
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Hyperf\HttpMessage\Stream\SwooleStream;
-use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
+use Dleno\CommonCore\Annotation\WsExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Tools\OutPut;
 use Dleno\CommonCore\Tools\Output\ErrorOutLog;
@@ -20,7 +20,7 @@ use Throwable;
 class DefaultExceptionHandler extends ExceptionHandler
 {
     /**
-     * @ExceptionHandlerLog()
+     * @WsExceptionHandlerLog()
      * @param Throwable $throwable
      * @param ResponseInterface $response
      * @return mixed

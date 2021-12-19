@@ -21,7 +21,7 @@ class ApiOutLog
      */
     public static function writeLog(ProceedingJoinPoint $proceedingJoinPoint, $result)
     {
-        if ((new \ReflectionMethod($proceedingJoinPoint->className, $proceedingJoinPoint->methodName))->isPrivate()) {
+        if (!(new \ReflectionMethod($proceedingJoinPoint->className, $proceedingJoinPoint->methodName))->isPublic()) {
             return;
         }
         if ($result instanceof ResponseInterface) {

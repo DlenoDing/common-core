@@ -6,7 +6,7 @@ namespace Dleno\CommonCore\Exception\Handler\Websocket;
 
 use Hyperf\Validation\ValidationException;
 use Hyperf\HttpMessage\Stream\SwooleStream;
-use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
+use Dleno\CommonCore\Annotation\WsExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Tools\OutPut;
 use Psr\Http\Message\ResponseInterface;
@@ -20,7 +20,7 @@ class ValidationExceptionHandler extends \Hyperf\Validation\ValidationExceptionH
 {
     /**
      * Handle the exception, and return the specified result.
-     * @ExceptionHandlerLog()
+     * @WsExceptionHandlerLog()
      * @param ValidationException $throwable
      */
     public function handle(Throwable $throwable, ResponseInterface $response)
