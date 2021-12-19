@@ -6,7 +6,7 @@ use Hyperf\Di\Annotation\AbstractAnnotation;
 
 /**
  * @Annotation
- * @Target("METHOD")
+ * @Target("CLASS")
  */
 class WsController extends AbstractAnnotation
 {
