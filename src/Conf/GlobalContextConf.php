@@ -22,6 +22,7 @@ class GlobalContextConf
         RequestConf::REQUEST_RUN_MEM,
         RequestConf::REQUEST_TIMEZONE,
         RequestConf::REQUEST_MCA,
+        RequestConf::REQUEST_REQ_ID,
     ];
 
 }

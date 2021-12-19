@@ -17,7 +17,7 @@ class RpcOutLog
      * 输出接口日志
      * @param $result
      */
-    public static function writeLog(ProceedingJoinPoint $proceedingJoinPoint, $result)
+    public static function writeLog(ProceedingJoinPoint $proceedingJoinPoint, $result, $channel = null, $group = null)
     {
         if (!(new \ReflectionMethod($proceedingJoinPoint->className, $proceedingJoinPoint->methodName))->isPublic()) {
             return;
@@ -32,7 +32,7 @@ class RpcOutLog
         }
         //协程内执行
         Coroutine::create(
-            function () use ($proceedingJoinPoint, $result) {
+            function () use ($proceedingJoinPoint, $result, $channel, $group) {
                 $result = is_array($result) ? array_to_json($result) : $result;
                 //错误时输出路由对应的类和方法；正确时输出调用的类和方法
                 if (strpos(
@@ -45,16 +45,17 @@ class RpcOutLog
                 } else {
                     $service = $proceedingJoinPoint->className . '->' . $proceedingJoinPoint->methodName;
                 }
-                $server  = config('app_name') . '(' . Server::getIpAddr() . ')';
-                $post    = $proceedingJoinPoint->arguments['keys'] ?? [];
+                $server = config('app_name') . '(' . Server::getIpAddr() . ')';
+                $post   = $proceedingJoinPoint->arguments['keys'] ?? [];
                 foreach ($post as $key => $value) {
-                    if ($value instanceof \Dleno\InterfaceService\Params\BaseParams || $value instanceof \Dleno\InterfaceBase\Params\BaseParams) {
+                    if ($value instanceof \Dleno\CommonCore\JsonRpc\InterfaceBase\BaseParams) {
                         $post[$key] = $value->toArray();
                     }
                 }
                 $traceId = Server::getTraceId();
                 $context = get_inject_obj(\Hyperf\Rpc\Context::class)->getData();
-                Logger::apiLog(Logger::API_CHANNEL_RESPONSE)
+                $channel = $channel ?? Logger::API_CHANNEL_RESPONSE;
+                Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
                               'Server::%s||Trace-Id::%s||Service::%s||Context::%s||Params::%s||Response::%s',

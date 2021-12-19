@@ -2,7 +2,6 @@
 
 namespace Dleno\CommonCore\Tools\Output;
 
-use App\Conf\ApiRequestConf;
 use Hyperf\HttpServer\Response;
 use Hyperf\Utils\ApplicationContext;
 use Hyperf\Utils\Context;
@@ -19,7 +18,7 @@ class WsOutLog
      * 输出接口日志
      * @param $result
      */
-    public static function writeLog($result)
+    public static function writeLog($result, $channel = null, $group = null)
     {
         if ($result instanceof ResponseInterface) {
             /** @var Response $result */
@@ -28,14 +27,14 @@ class WsOutLog
         }
         //协程内执行
         Coroutine::create(
-            function () use ($result) {
+            function () use ($result, $channel, $group) {
                 $result  = is_array($result) ? array_to_json($result) : $result;
                 $request = ApplicationContext::getContainer()
                                              ->get(ServerRequestInterface::class);
 
                 $post                    = $request->getParsedBody();
                 $headers                 = $request->getHeaders();
-                $reqId                   = Context::get(ApiRequestConf::REQUEST_REQ_ID, '0');
+                $reqId                   = Context::get(RequestConf::REQUEST_REQ_ID, '0');
                 $headers['Client-ReqId'] = $reqId;
                 foreach ($headers as $key => $val) {
                     unset($headers[$key]);
@@ -46,7 +45,7 @@ class WsOutLog
                 }
                 unset($headers['client-key'], $headers['client-timestamp'], $headers['client-nonce'], $headers['client-sign'], $headers['client-accesskey']);//去除不需要的key
 
-                $server  = config('app_name') . '(' . Server::getIpAddr() . ')';
+                $server = config('app_name') . '(' . Server::getIpAddr() . ')';
                 if ($reqId) {
                     $mca     = Server::getRouteMca();
                     $service = join('\\', $mca['module']) . '\\' . $mca['ctrl'] . '->' . $mca['action'];
@@ -55,7 +54,8 @@ class WsOutLog
                 }
 
                 $traceId = Server::getTraceId();
-                Logger::apiLog(Logger::API_CHANNEL_RESPONSE)
+                $channel = $channel ?? Logger::API_CHANNEL_RESPONSE;
+                Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
                               'Server::%s||Trace-Id::%s||Service::%s||Header::%s||Post::%s||Response::%s',

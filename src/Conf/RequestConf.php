@@ -17,5 +17,7 @@ class RequestConf
     const REQUEST_TIMEZONE = '__TIMEZONE__';
     //请求路由对应的MCA
     const REQUEST_MCA = '__MCA__';
+    //请求ReqId
+    const REQUEST_REQ_ID = '__REQ_ID__';
 
 }

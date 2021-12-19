@@ -33,9 +33,9 @@ class Logger
      * @param string $channel
      * @return LoggerInterface
      */
-    public static function systemLog($channel = 'DEFAULT'): LoggerInterface
+    public static function systemLog($channel = 'DEFAULT', $group = 'default'): LoggerInterface
     {
-        $group  = 'default';
+        $group  = $group ?? 'default';
         $logger = get_inject_obj(LoggerFactory::class)->get($channel, $group);
         return $logger;
     }
@@ -45,9 +45,9 @@ class Logger
      * @param string $channel
      * @return LoggerInterface
      */
-    public static function apiLog($channel = 'DEFAULT'): LoggerInterface
+    public static function apiLog($channel = 'DEFAULT', $group = 'api'): LoggerInterface
     {
-        $group  = 'api';
+        $group  = $group ?? 'api';
         $logger = get_inject_obj(LoggerFactory::class)->get($channel, $group);
         return $logger;
     }
@@ -57,9 +57,9 @@ class Logger
      * @param string $channel
      * @return LoggerInterface
      */
-    public static function sqlLog($channel = 'DEFAULT'): LoggerInterface
+    public static function sqlLog($channel = 'DEFAULT', $group = 'sql'): LoggerInterface
     {
-        $group  = 'sql';
+        $group  = $group ?? 'sql';
         $logger = get_inject_obj(LoggerFactory::class)->get($channel, $group);
         return $logger;
     }
@@ -69,9 +69,9 @@ class Logger
      * @param string $channel
      * @return LoggerInterface
      */
-    public static function businessLog($channel = 'DEFAULT'): LoggerInterface
+    public static function businessLog($channel = 'DEFAULT', $group = 'business'): LoggerInterface
     {
-        $group  = 'business';
+        $group  = $group ?? 'business';
         $logger = get_inject_obj(LoggerFactory::class)->get($channel, $group);
         return $logger;
     }
