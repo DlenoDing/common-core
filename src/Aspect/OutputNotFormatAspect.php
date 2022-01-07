@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Aspect;
+namespace Dleno\CommonCore\Aspect;
 
 use App\Tools\ApiServer;
 use Dleno\CommonCore\Conf\RequestConf;
@@ -19,7 +19,7 @@ use Psr\Http\Message\ResponseInterface;
 /**
  * @Aspect
  */
-class ApiOutputAspect extends AbstractAspect
+class OutputNotFormatAspect extends AbstractAspect
 {
     // 要切入的类，可以多个，亦可通过 :: 标识到具体的某个方法，通过 * 可以模糊匹配
     public $classes = [
