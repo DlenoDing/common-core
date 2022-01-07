@@ -3,8 +3,10 @@
 namespace Dleno\CommonCore\Tools;
 
 use Dleno\CommonCore\Conf\GlobalConf;
+use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Tools\Check\CheckVal;
 use Dleno\CommonCore\Conf\RcodeConf;
+use Hyperf\Utils\Context;
 
 /**
  * 接口输出组件
@@ -92,6 +94,10 @@ class OutPut
      * */
     private static function formatData($data)
     {
+        //不自动转换数据
+        if (Context::get(RequestConf::OUTPUT_NOT_FORMAT, false)) {
+            return $data;
+        }
         $tmp = [];
         foreach ($data as $key => $val) {
             $key = $key . '';//key做字符串处理
