@@ -32,6 +32,7 @@
         "hyperf/rpc-client": "~2.2.0",
         "hyperf/guzzle": "~2.2.0",
         "hyperf/amqp": "~2.2.0",
+        "hyperf/async-queue": "^2.2",
         "dleno/hyperf-env-multi": "~2.2.0",
         "dleno/hyperf-aliyun-acm": "~2.2.0",
         "symfony/serializer": "^5.0",
