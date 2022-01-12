@@ -47,4 +47,20 @@ class Strings
         $parseData = str_replace($search, $replace, $str);
         return $parseData;
     }
+
+    /**
+     * 格式化金额为要显示的字符串
+     * @param float $price 金额，单位为元
+     * @param int $decimals 小数位数
+     * @param string $format 格式化串
+     * @return string
+     */
+    public static function formatPrice($price, $decimals = 2, $format = null)
+    {
+        $price = number_format($price, $decimals);
+        if (empty($format)) {
+            $format = '￥%s';
+        }
+        return sprintf($format, $price);
+    }
 }
