@@ -19,15 +19,6 @@ abstract class BaseJob extends Job
      */
     protected $maxAttempts = 5;
 
-    //接收参数（可自定义其他或者多个）
-    public $params;
-
-    public function __construct($params)
-    {
-        // 这里最好是普通数据，不要使用携带 IO 的对象，比如 PDO 对象
-        $this->params = $params;
-    }
-
     public function getQueue()
     {
         return $this->queue;
