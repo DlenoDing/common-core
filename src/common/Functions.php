@@ -14,7 +14,7 @@ declare(strict_types=1);
 use Dleno\CommonCore\Conf\GlobalConf;
 use Dleno\CommonCore\Tools\Client;
 use Hyperf\Utils\ApplicationContext;
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Hyperf\WebSocketServer\Context as WsContext;

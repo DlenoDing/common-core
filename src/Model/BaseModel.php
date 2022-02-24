@@ -14,7 +14,7 @@ namespace Dleno\CommonCore\Model;
 use Hyperf\Database\ConnectionInterface;
 use Hyperf\Database\Model\Register;
 use Hyperf\DbConnection\Model\Model;
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 use Hyperf\Utils\Str;
 
 /**

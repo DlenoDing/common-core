@@ -3,7 +3,7 @@
 namespace Dleno\CommonCore\Tools;
 
 use Hyperf\HttpServer\Router\Dispatched;
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Conf\RpcContextConf;
 use Psr\Http\Message\ServerRequestInterface;

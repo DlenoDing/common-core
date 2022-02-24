@@ -6,7 +6,7 @@ use Dleno\CommonCore\Conf\GlobalConf;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Tools\Check\CheckVal;
 use Dleno\CommonCore\Conf\RcodeConf;
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 
 /**
  * 接口输出组件

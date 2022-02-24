@@ -4,7 +4,7 @@ namespace Dleno\CommonCore\Tools\Output;
 
 use Hyperf\HttpServer\Response;
 use Hyperf\Utils\ApplicationContext;
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 use Hyperf\Utils\Coroutine;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Tools\Logger;

@@ -2,7 +2,7 @@
 
 namespace Dleno\CommonCore\JsonRpc;
 
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 use Hyperf\Utils\Coroutine;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Conf\RpcConsumersConf;

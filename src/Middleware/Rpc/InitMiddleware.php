@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Middleware\Rpc;
 
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Tools\Client;
 use Dleno\CommonCore\Tools\Language;

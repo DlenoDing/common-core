@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Middleware\Http;
 
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Conf\RpcContextConf;
 use Dleno\CommonCore\Tools\Client;

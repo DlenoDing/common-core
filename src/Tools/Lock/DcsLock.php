@@ -4,7 +4,7 @@ namespace Dleno\CommonCore\Tools\Lock;
 
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Snowflake\IdGeneratorInterface;
-use Hyperf\Utils\Context;
+use Hyperf\Context\Context;
 
 class DcsLock
 {
