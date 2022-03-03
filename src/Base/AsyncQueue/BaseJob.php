@@ -26,6 +26,12 @@ abstract class BaseJob extends Job
         return $this->queue;
     }
 
+    public function setQueue($queue)
+    {
+        $this->queue = $queue;
+        return $this;
+    }
+
     /**
      * 自定义 async_queue 对应的$this->queue配置项（动态queue时才需要处理此函数）
      * @return array
