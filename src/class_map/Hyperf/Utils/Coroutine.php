@@ -61,7 +61,7 @@ class Coroutine
         $coroutine = Co::create(function () use ($callable, $pid) {
             try {
                 if ($pid > 0) {
-                    Context::copy($pid, config('app.global_context'));
+                    \Hyperf\Context\Context::copy($pid, config('app.global_context', []));
                 }
                 call($callable);
             } catch (Throwable $throwable) {
