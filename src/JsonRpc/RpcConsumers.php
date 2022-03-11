@@ -27,15 +27,14 @@ class RpcConsumers
 
     public static function getNode($serviceName)
     {
-        if (RpcConsumersConf::RPC_REGISTRY) {
+        if (config('services.rpc_registry', false)) {
             return [];
         }
         $serviceName = self::getServiceName($serviceName);
-        if (env('APP_ENV', '') == 'local') {
-            $node = RpcConsumersConf::$localNodes[$serviceName] ?? [];
-        } else {
-            $node = RpcConsumersConf::$nodes[$serviceName] ?? [];
-        }
+        $appEnv      = config('app_env', 'local');
+        $nodes       = config('services.nodes', false);
+        $nodes       = $nodes[$appEnv] ?? [];
+        $node        = $nodes[$serviceName] ?? [];
         if (empty($node)) {
             return [];
         }
@@ -45,7 +44,7 @@ class RpcConsumers
 
     public static function getRegistry($serviceName)
     {
-        if (!RpcConsumersConf::RPC_REGISTRY) {
+        if (!config('services.rpc_registry', false)) {
             return [];
         }
 
