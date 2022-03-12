@@ -20,6 +20,11 @@ use PhpAmqpLib\Wire\AMQPTable;
 class BaseConsumer extends ConsumerMessage
 {
     /**
+     * @var string
+     */
+    protected $poolName = 'default';//设置使用的连接池，可在__construct里动态改变
+
+    /**
      * @var string 交换机类型
      */
     protected $type = Type::DIRECT;
