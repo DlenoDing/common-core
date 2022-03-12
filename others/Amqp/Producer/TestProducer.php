@@ -33,4 +33,13 @@ class TestProducer extends BaseProducer
         parent::__construct($data, $delay);
     }
 
+    private function testSend()
+    {
+        $data = ['ssss'=>111];
+        $message = new TestProducer($data);
+        $routingKey = 'TestRouting1';//动态设置
+        $message->setRoutingKey($routingKey);
+        \Dleno\CommonCore\Tools\Amqp\Producer::send($message);
+    }
+
 }
