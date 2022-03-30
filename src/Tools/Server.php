@@ -34,7 +34,7 @@ class Server
                 $request = get_inject_obj(ServerRequestInterface::class);
                 /** @var Dispatched $dispatched */
                 $dispatched = $request->getAttribute(Dispatched::class);
-                if (!is_null($dispatched->handler)) {
+                if (is_object($dispatched) && !is_null($dispatched->handler)) {
                     $callback = $dispatched->handler->callback;
                     if (!is_array($callback)) {
                         $callback = [$callback];
