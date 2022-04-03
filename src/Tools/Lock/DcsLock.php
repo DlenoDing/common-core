@@ -2,7 +2,9 @@
 
 namespace Dleno\CommonCore\Tools\Lock;
 
+use Dleno\CommonCore\Tools\Logger;
 use Hyperf\Redis\RedisFactory;
+use Hyperf\Redis\RedisProxy;
 use Hyperf\Snowflake\IdGeneratorInterface;
 use Hyperf\Context\Context;
 
@@ -96,8 +98,8 @@ class DcsLock
      */
     public static function unlock(string $lockKey, string $uuid): bool
     {
-        $script = /** @lang lua */
-            <<<EOF
+        /** @lang lua */
+        $script = <<<EOF
 if redis.call('get', KEYS[1]) == ARGV[1] then
     if redis.call('del', KEYS[1]) then
         if redis.call('lLen', KEYS[2]) == 0 then
@@ -110,8 +112,27 @@ end
 return 0;
 EOF;
         $redis  = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
-        $ret    = $redis->eval($script, [$lockKey, $lockKey . '_WAIT', $uuid], 2);
+        $params = [$lockKey, $lockKey . '_WAIT', $uuid];
+        $ret    = $redis->eval($script, $params, 2);
+        if (!$ret) {
+            $ret = self::_unlock($redis, ...$params);
+        }
         return $ret ? true : false;
+    }
+
+    private static function _unlock(RedisProxy $redis, string $lockKey, string $lockKeyWait, string $uuid)
+    {
+        Logger::stdoutLog()->warning('Current Redis Can\'t Execute Lua!!');
+        if ($redis->get($lockKey) == $uuid) {
+            if ($redis->del($lockKey)) {
+                if ($redis->lLen($lockKeyWait) == 0) {
+                    $redis->lpush($lockKeyWait, $uuid);
+                }
+                $redis->expire($lockKeyWait, 10);
+                return true;
+            }
+        }
+        return false;
     }
 
     public static function testLock()
