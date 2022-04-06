@@ -51,9 +51,12 @@ class TimeTool
      * 获取当前到今日结束为止的秒数
      * @return int
      */
-    public static function getDayDoneSecond()
+    public static function getDayDoneSecond($date = null)
     {
-        $dayDoneSecond = strtotime('+1 day', strtotime(date('Y-m-d', time()))) - time();
+        if (empty($date)) {
+            $date = date('Y-m-d');
+        }
+        $dayDoneSecond = strtotime('+1 day', strtotime($date)) - time();
         $dayDoneSecond = $dayDoneSecond > 0 ? $dayDoneSecond : 0;
 
         return $dayDoneSecond;
