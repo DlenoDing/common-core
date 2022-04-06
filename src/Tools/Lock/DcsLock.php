@@ -114,7 +114,7 @@ EOF;
         $redis  = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
         $params = [$lockKey, $lockKey . '_WAIT', $uuid];
         $ret    = $redis->eval($script, $params, 2);
-        if (!$ret) {
+        if ($ret === false) {
             $ret = self::_unlock($redis, ...$params);
         }
         return $ret ? true : false;
