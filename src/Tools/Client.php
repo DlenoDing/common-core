@@ -15,22 +15,37 @@ class Client
         if (empty($ip)) {
             $ip = get_header_val('Client-Ip', '');
             if (!self::checkIp($ip)) {
-                $forwarded = get_header_val('X-Forwarded-For', '');
-                if (!empty($forwarded)) {
-                    $ips = explode(',', $forwarded);
-                    for ($i = 0; $i < count($ips); $i++) {
-                        $ip = $ips[$i];
-                        if (self::checkIp($ip)) {//排除局域网ip
-                            break;
+                //阿里云slb
+                $ip = get_header_val('RemoteIp', '');
+                if (!self::checkIp($ip) || !self::checkIpByAli($ip)) {
+                    //代理
+                    $forwarded = get_header_val('X-Forwarded-For', '');
+                    if (!empty($forwarded)) {
+                        $ips = explode(',', $forwarded);
+                        for ($i = 0; $i < count($ips); $i++) {
+                            $ip = $ips[$i];
+                            if (self::checkIp($ip)) {//排除局域网ip
+                                break;
+                            }
                         }
                     }
-                }
-                if (!self::checkIp($ip)) {
-                    $ip = get_server_val('Remote_Addr', '');
+                    //客户端IP
+                    if (!self::checkIp($ip)) {
+                        $ip = get_server_val('Remote_Addr', '');
+                    }
                 }
             }
         }
         return $ip;
+    }
+
+    public static function checkIpByAli($ip)
+    {
+        if (empty($ip) || strcasecmp($ip, 'unknown') == 0) {
+            return false;
+        }
+        //排除阿里云保留IP
+        return preg_match("/^(100\\.64|100\\.251)\\./i", $ip) ? false : true;
     }
 
     public static function checkIp($ip)
