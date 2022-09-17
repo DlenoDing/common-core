@@ -199,11 +199,9 @@ class BaseModel extends Model
                     $autoIncrement = $this->splitMaxNum * $num + 1;
                 }
                 //show create table `table_name`;
-                var_dump($autoIncrement);
                 $prefix = $this->getPrefix();
                 Db::update('CREATE TABLE `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
                 if ($autoIncrement > 1) {
-                    var_dump('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
                     Db::update('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
                 }
             } catch (\Throwable $e) {
