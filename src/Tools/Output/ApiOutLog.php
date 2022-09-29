@@ -38,19 +38,29 @@ class ApiOutLog
                 $url     = $request->path();
                 $post    = $request->getParsedBody();
                 $headers = $request->getHeaders();
-                $postRaw = $request->getBody()
+                /*$postRaw = $request->getBody()
                                    ->getContents();
                 $postRaw = str_replace(PHP_EOL, '\n', $postRaw);
-                $postRaw = str_replace("\r", '\r', $postRaw);
+                $postRaw = str_replace("\r", '\r', $postRaw);*/
 
+                $allowHeaders = config('app.ac_allow_headers', []);
+                array_walk($allowHeaders, function (&$val) {
+                    $val = strtolower($val);
+                });
+                $filterHeaders = config('app.filter_headers', [
+                    'client-key', 'client-timestamp', 'client-nonce', 'client-sign', 'client-accesskey',
+                ]);
+                array_walk($filterHeaders, function (&$val) {
+                        $val = strtolower($val);
+                });
+                $allowHeaders = array_diff($allowHeaders, $filterHeaders);
                 foreach ($headers as $key => $val) {
                     unset($headers[$key]);
                     $key = strtolower($key);
-                    if (strpos($key, 'client-') !== false) {
+                    if (in_array($key, $allowHeaders)) {
                         $headers[$key] = is_array($val) ? join('; ', $val) : $val;
                     }
                 }
-                unset($headers['client-key'], $headers['client-timestamp'], $headers['client-nonce'], $headers['client-sign'], $headers['client-accesskey']);//去除不需要的key
 
                 $server = config('app_name') . '(' . Server::getIpAddr() . ')';
 
@@ -59,12 +69,11 @@ class ApiOutLog
                 Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Url::%s||Header::%s||PostRaw::%s||Post::%s||Response::%s',
+                              'Server::%s||Trace-Id::%s||Url::%s||Header::%s||Post::%s||Response::%s',
                               $server,
                               $traceId,
                               $url,
                               array_to_json($headers),
-                              $postRaw,
                               array_to_json($post),
                               $result
                           ),
