@@ -313,34 +313,6 @@ if (!function_exists('dynamic_rpc_service_get')) {
     }
 }
 
-if (!function_exists('get_app_service_hook')) {
-    /**
-     * 获取app服务钩子
-     * @param string $appKey
-     * @param array $node
-     * @return \Dleno\InterfaceService\Contracts\AppCommon\CommonHookContractInterface
-     */
-    function get_app_service_hook($appKey, array $node = [])
-    {
-        $appKey  = ucfirst($appKey);
-        $serviceName = 'Service.' . $appKey . '.CommonHookService';
-        if (empty($node)) {
-            $node = \Dleno\CommonCore\JsonRpc\RpcConsumers::getNode($serviceName);
-            if (empty($node)) {
-                $node = [
-                    ['host' => $appKey . '.Rpc-Service', 'port' => 9504],
-                ];
-            }
-        }
-        $service = dynamic_rpc_service_get(
-            $serviceName,
-            \Dleno\InterfaceService\Contracts\AppCommon\CommonHookContractInterface::class,
-            $node
-        );
-        return $service;
-    }
-}
-
 if (!function_exists('catch_fatal_error_8888')) {
     /**
      * 捕获系统Fatal error错误
@@ -387,6 +359,8 @@ if (!function_exists('catch_fatal_error_8888')) {
                 'Message' => str_replace(BASE_PATH, '', $error["message"]),
             ]
         );
+
+        return true;
     }
 
     //注册
