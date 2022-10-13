@@ -10,6 +10,7 @@ use Hyperf\Context\Context;
 
 class DcsLock
 {
+    private static $isWarning = false;
     /**
      * 加锁（使用分布式锁时$uuid建议使用雪花算法）
      * @param string $lockKey 锁key
@@ -122,7 +123,10 @@ EOF;
 
     private static function _unlock(RedisProxy $redis, string $lockKey, string $lockKeyWait, string $uuid)
     {
-        Logger::stdoutLog()->warning('Current Redis Can\'t Execute Lua!!');
+        if (!self::$isWarning) {
+            Logger::stdoutLog()->warning('Current Redis Can\'t Execute Lua!!');
+            self::$isWarning = true;
+        }
         if ($redis->get($lockKey) == $uuid) {
             if ($redis->del($lockKey)) {
                 if ($redis->lLen($lockKeyWait) == 0) {
