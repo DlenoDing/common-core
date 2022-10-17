@@ -36,19 +36,26 @@ class Server
                 $dispatched = $request->getAttribute(Dispatched::class);
                 if (is_object($dispatched) && !is_null($dispatched->handler)) {
                     $callback = $dispatched->handler->callback;
-                    if (!is_array($callback)) {
-                        $callback = [$callback];
-                    }
-                    $moduleCtrl = join('\\', $callback);
-                    $moduleCtrl = str_replace('Controller\\', '\\', $moduleCtrl);
-                    $moduleCtrl = explode('\\', $moduleCtrl);
-                    unset($moduleCtrl[0]);
-                    $moduleCtrl   = array_values(array_filter($moduleCtrl));
-                    $moduleCtrlCt = count($moduleCtrl);
+                    // 兼容在routes.php 里面写匿名函数调用的情况
+                    if ($callback instanceof \Closure) {
+                        $mca['module'] = ['closureModule'];
+                        $mca['ctrl']   = 'closureCtrl';
+                        $mca['action'] = 'closureAction';
+                    } else {
+                        if (!is_array($callback)) {
+                            $callback = [$callback];
+                        }
+                        $moduleCtrl = join('\\', $callback);
+                        $moduleCtrl = str_replace('Controller\\', '\\', $moduleCtrl);
+                        $moduleCtrl = explode('\\', $moduleCtrl);
+                        unset($moduleCtrl[0]);
+                        $moduleCtrl   = array_values(array_filter($moduleCtrl));
+                        $moduleCtrlCt = count($moduleCtrl);
 
-                    $mca['module'] = array_slice($moduleCtrl, 0, $moduleCtrlCt - 2);
-                    $mca['ctrl']   = get_array_val($moduleCtrl, $moduleCtrlCt - 2);
-                    $mca['action'] = get_array_val($moduleCtrl, $moduleCtrlCt - 1);
+                        $mca['module'] = array_slice($moduleCtrl, 0, $moduleCtrlCt - 2);
+                        $mca['ctrl']   = get_array_val($moduleCtrl, $moduleCtrlCt - 2);
+                        $mca['action'] = get_array_val($moduleCtrl, $moduleCtrlCt - 1);
+                    }
                 }
             }
             Context::set(RequestConf::REQUEST_MCA, $mca);

@@ -2,6 +2,7 @@
 
 namespace Dleno\CommonCore\Tools\Output;
 
+use Dleno\CommonCore\Tools\Client;
 use Hyperf\HttpServer\Response;
 use Hyperf\Utils\ApplicationContext;
 use Hyperf\Context\Context;
@@ -67,12 +68,14 @@ class WsOutLog
 
                 $traceId = Server::getTraceId();
                 $channel = $channel ?? Logger::API_CHANNEL_RESPONSE;
+                $clientIp = Client::getIP();
                 Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Url::%s||Header::%s||Post::%s||Response::%s',
+                              'Server::%s||Trace-Id::%s||Ip::%s||Url::%s||Header::%s||Post::%s||Response::%s',
                               $server,
                               $traceId,
+                              $clientIp,
                               $service,
                               array_to_json($headers),
                               array_to_json($post),
