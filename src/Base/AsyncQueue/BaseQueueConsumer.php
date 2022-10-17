@@ -27,6 +27,12 @@ class BaseQueueConsumer extends AbstractProcess
      */
     protected $config;
 
+    /**
+     * @var array
+     */
+    protected $reloadChannel = [];
+
+
     public function __construct(ContainerInterface $container)
     {
         parent::__construct($container);
@@ -45,6 +51,10 @@ class BaseQueueConsumer extends AbstractProcess
 
         $this->name = "queue.{$this->queue}";
         $this->nums = $this->config['processes'] ?? 1;
+
+        foreach ($this->reloadChannel as $channel) {
+            $this->driver->reload($channel);
+        }
     }
 
     public function handle(): void
