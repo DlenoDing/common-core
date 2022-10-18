@@ -65,6 +65,25 @@ class ModelBuilder extends Builder
     }
 
     /**
+     * @param string $name
+     * @return $this
+     */
+    public function setConnection($name)
+    {
+        $this->model->setConnection($name);
+
+        return $this;
+    }
+
+    /**
+     * @return string
+     */
+    public function getConnectionName()
+    {
+        return $this->model->getConnectionName();
+    }
+
+    /**
      * Find a model by its primary key or return fresh model instance.
      *
      * @param array $columns
