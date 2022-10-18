@@ -313,15 +313,19 @@ class BaseModel extends Model
 
     /**
      * 获取model,替代原来的query()方法，可以同时设置model别名
-     * @param null $alias
+     * @param null $alias 指定别名，不指定则使用属性定义
      * @param null $primaryId 分表时使用，用于根据$primaryId定位所属的表
+     * @param null $connection 数据连接名，不指定则使用属性定义
      * @return ModelBuilder
      */
-    public static function getModel($alias = null, $primaryId = null)
+    public static function getModel($alias = null, $primaryId = null, $connection = null)
     {
         $query = self::query();
         if (!empty($alias) || !empty($primaryId)) {
             $model = $query->getModel();
+            if (!empty($connection)) {
+                $model = $model->setConnection($connection);
+            }
             if (!empty($alias)) {
                 $model = $model->setAlias($alias);
             }
