@@ -200,9 +200,9 @@ class BaseModel extends Model
                 }
                 //show create table `table_name`;
                 $prefix = $this->getPrefix();
-                Db::update('CREATE TABLE `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
+                Db::connection($this->getConnectionName())->update('CREATE TABLE `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
                 if ($autoIncrement > 1) {
-                    Db::update('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
+                    Db::connection($this->getConnectionName())->update('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
                 }
             } catch (\Throwable $e) {
                 Logger::systemLog('DB-SPLIT-ERROR')
@@ -256,7 +256,7 @@ class BaseModel extends Model
     {
         $database  = $this->getDataBase();
         $prefix    = $this->getPrefix();
-        $tableName = Db::select(
+        $tableName = Db::connection($this->getConnectionName())->select(
             "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' and AUTO_INCREMENT>'{$primaryId}' ORDER BY `AUTO_INCREMENT` ASC LIMIT 1"
         );
         $tableName = $tableName['TABLE_NAME'] ?? null;
@@ -267,7 +267,7 @@ class BaseModel extends Model
     {
         $database  = $this->getDataBase();
         $prefix    = $this->getPrefix();
-        $prevTable = Db::select(
+        $prevTable = Db::connection($this->getConnectionName())->select(
             "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' ORDER BY `TABLE_NAME` DESC LIMIT 1"
         );
         $prevTable = $prevTable[0] ?? [];
@@ -281,7 +281,7 @@ class BaseModel extends Model
     {
         $database  = $this->getDataBase();
         $prefix    = $this->getPrefix();
-        $prevTable = Db::select(
+        $prevTable = Db::connection($this->getConnectionName())->select(
             "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` = '{$prefix}{$this->baseTable}' ORDER BY `TABLE_NAME` DESC LIMIT 1"
         );
         $prevTable = $prevTable[0] ?? [];
@@ -312,30 +312,81 @@ class BaseModel extends Model
     }
 
     /**
-     * 获取model,替代原来的query()方法，可以同时设置model别名
+     * 老方法
      * @param null $alias 指定别名，不指定则使用属性定义
-     * @param null $primaryId 分表时使用，用于根据$primaryId定位所属的表
      * @param null $connection 数据连接名，不指定则使用属性定义
+     * @param null $primaryId 分表时使用，用于根据$primaryId定位所属的表
      * @return ModelBuilder
      */
-    public static function getModel($alias = null, $primaryId = null, $connection = null)
+    public static function getModel($alias = null, $connection = null, $primaryId = null)
     {
-        $query = self::query();
-        if (!empty($alias) || !empty($primaryId)) {
-            $model = $query->getModel();
-            if (!empty($connection)) {
-                $model = $model->setConnection($connection);
-            }
-            if (!empty($alias)) {
-                $model = $model->setAlias($alias);
-            }
-            if (!empty($primaryId)) {
-                $model = $model->splitSetTableByPrimaryId($primaryId);
-            }
-            $query = $query->setModel($model);
-        }
+        return static::query($alias, $connection, $primaryId);
+    }
 
-        return $query;//IDE会提示类型不一致，忽略
+    /**
+     * Begin querying the model.
+     * @param null|string $alias 指定别名，不指定则使用属性定义
+     * @param null|string $connection 数据连接名，不指定则使用属性定义
+     * @param null|int $primaryId 分表时使用，用于根据$primaryId定位所属的表
+     * @return ModelBuilder
+     */
+    public static function query($alias = null, $connection = null, $primaryId = null)
+    {
+        $instance = new static();
+        $instance->setConnection($connection);
+        if (!empty($alias)) {
+            $instance->setAlias($alias);
+        }
+        if (!empty($primaryId)) {
+            $instance->splitSetTableByPrimaryId($primaryId);
+        }
+        //IDE会提示类型不一致，忽略
+        return  $instance->newQuery();
+    }
+
+    /**
+     * Begin querying the model on a given connection.
+     *
+     * @param null|string $connection 数据连接名，不指定则使用属性定义
+     * @param null|string $alias 指定别名，不指定则使用属性定义
+     * @param null|int $primaryId 分表时使用，用于根据$primaryId定位所属的表
+     * @return ModelBuilder
+     */
+    public static function on($connection = null, $alias = null, $primaryId = null)
+    {
+        return static::query($alias, $connection, $primaryId);
+    }
+
+    /**
+     * Begin querying the model on the write connection.
+     *
+     * @return \Hyperf\Database\Query\Builder
+     */
+    public static function onWriteConnection($connection = null, $alias = null)
+    {
+        return static::query($alias, $connection)->useWritePdo();
+    }
+
+    /**
+     * Get all of the models from the database.
+     *
+     * @param array|mixed $columns
+     * @return \Hyperf\Database\Model\Collection|static[]
+     */
+    public static function all($columns = ['*'], $connection = null)
+    {
+        return static::query(null, $connection)->get(is_array($columns) ? $columns : func_get_args());
+    }
+
+    /**
+     * Begin querying a model with eager loading.
+     *
+     * @param array|string $relations
+     * @return ModelBuilder|static
+     */
+    public static function with($relations, $connection = null)
+    {
+        return static::query(null, $connection)->with(is_string($relations) ? func_get_args() : $relations);
     }
 
     /**
