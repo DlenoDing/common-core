@@ -333,7 +333,7 @@ class BaseModel extends Model
     public static function query($alias = null, $connection = null, $primaryId = null)
     {
         $instance = new static();
-        $instance->setConnection($connection);
+        $connection && $instance->setConnection($connection);
         if (!empty($alias)) {
             $instance->setAlias($alias);
         }
