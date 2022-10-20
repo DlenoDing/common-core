@@ -23,6 +23,8 @@ class GlobalContextConf
         RequestConf::REQUEST_TIMEZONE,
         RequestConf::REQUEST_MCA,
         RequestConf::REQUEST_REQ_ID,
+        RequestConf::OUTPUT_NOT_FORMAT,
+        RequestConf::OUTPUT_HTML,
     ];
 
 }

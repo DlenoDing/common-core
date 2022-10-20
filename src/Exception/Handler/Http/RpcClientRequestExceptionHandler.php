@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
+use Dleno\CommonCore\Conf\RequestConf;
+use Hyperf\Context\Context;
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\JsonRpc\ResponseBuilder;
@@ -48,7 +50,12 @@ class RpcClientRequestExceptionHandler extends ExceptionHandler
         }
 
         //数据返回
-        $output = OutPut::outJsonToError($message, $code);
+        if (Context::get(RequestConf::OUTPUT_HTML)) {
+            $output   = $message;
+            $response = $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+        } else {
+            $output = OutPut::outJsonToError($message, $code);
+        }
         return $response->withStatus(200)
                         ->withBody(new SwooleStream($output));
     }

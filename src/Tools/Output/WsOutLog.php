@@ -30,6 +30,8 @@ class WsOutLog
         Coroutine::create(
             function () use ($result, $channel, $group) {
                 $result  = is_array($result) ? array_to_json($result) : $result;
+                $result  = str_replace(PHP_EOL, '\n', $result);
+                $result  = str_replace("\r", '', $result);
                 $request = ApplicationContext::getContainer()
                                              ->get(ServerRequestInterface::class);
 
@@ -38,13 +40,13 @@ class WsOutLog
                 $reqId                   = Context::get(RequestConf::REQUEST_REQ_ID, '0');
                 $headers['Client-ReqId'] = $reqId;
 
-                $allowHeaders = config('app.ac_allow_headers', []);
+                $allowHeaders   = config('app.ac_allow_headers', []);
                 $allowHeaders[] = 'Client-ReqId';
                 array_walk($allowHeaders, function (&$val) {
                     $val = strtolower($val);
                 });
                 $filterHeaders = config('app.filter_headers', [
-                    'client-key', 'client-timestamp', 'client-nonce', 'client-sign', 'client-accesskey',
+                    'content-type', 'client-key', 'client-timestamp', 'client-nonce', 'client-sign', 'client-accesskey',
                 ]);
                 array_walk($filterHeaders, function (&$val) {
                     $val = strtolower($val);
@@ -66,8 +68,8 @@ class WsOutLog
                     $service = $request->path();
                 }
 
-                $traceId = Server::getTraceId();
-                $channel = $channel ?? Logger::API_CHANNEL_RESPONSE;
+                $traceId  = Server::getTraceId();
+                $channel  = $channel ?? Logger::API_CHANNEL_RESPONSE;
                 $clientIp = Client::getIP();
                 Logger::apiLog($channel, $group)
                       ->info(

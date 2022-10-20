@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
+use Dleno\CommonCore\Conf\RequestConf;
+use Hyperf\Context\Context;
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
@@ -33,7 +35,13 @@ class DefaultExceptionHandler extends ExceptionHandler
         ErrorOutLog::writeLog($throwable, ErrorOutLog::LOG_ALERT);
 
         //数据返回
-        $output = OutPut::outJsonToError('Internal Server Error', RcodeConf::ERROR_SERVER);
+        $message = 'Internal Server Error';
+        if (Context::get(RequestConf::OUTPUT_HTML)) {
+            $output   = $message;
+            $response = $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+        } else {
+            $output = OutPut::outJsonToError($message, RcodeConf::ERROR_SERVER);
+        }
         return $response->withStatus(RcodeConf::ERROR_SERVER)
                         ->withBody(new SwooleStream($output));
     }

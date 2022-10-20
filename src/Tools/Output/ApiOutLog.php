@@ -39,17 +39,16 @@ class ApiOutLog
                 $url     = $request->path();
                 $post    = $request->getParsedBody();
                 $headers = $request->getHeaders();
-                /*$postRaw = $request->getBody()
-                                   ->getContents();
-                $postRaw = str_replace(PHP_EOL, '\n', $postRaw);
-                $postRaw = str_replace("\r", '\r', $postRaw);*/
+
+                $result = str_replace(PHP_EOL, '\n', $result);
+                $result = str_replace("\r", '', $result);
 
                 $allowHeaders = config('app.ac_allow_headers', []);
                 array_walk($allowHeaders, function (&$val) {
                     $val = strtolower($val);
                 });
                 $filterHeaders = config('app.filter_headers', [
-                    'client-key', 'client-timestamp', 'client-nonce', 'client-sign', 'client-accesskey',
+                    'content-type', 'client-key', 'client-timestamp', 'client-nonce', 'client-sign', 'client-accesskey',
                 ]);
                 array_walk($filterHeaders, function (&$val) {
                         $val = strtolower($val);

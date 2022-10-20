@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
+use Dleno\CommonCore\Conf\RequestConf;
+use Hyperf\Context\Context;
 use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
@@ -33,7 +35,12 @@ class HttpExceptionHandler extends \Hyperf\HttpServer\Exception\Handler\HttpExce
         $code       = $throwable->getCode();
         $code       = $code?:RcodeConf::ERROR_SERVER;
 
-        $output     = OutPut::outJsonToError($message, $code);
+        if (Context::get(RequestConf::OUTPUT_HTML)) {
+            $output   = $message;
+            $response = $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+        } else {
+            $output = OutPut::outJsonToError($message, $code);
+        }
 
         return $response->withStatus($code)->withBody(new SwooleStream($output));
     }

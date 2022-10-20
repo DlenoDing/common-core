@@ -7,9 +7,6 @@ namespace Dleno\CommonCore\Conf;
  */
 class RequestConf
 {
-    //输出不自动转换
-    const OUTPUT_NOT_FORMAT = '__NOT_FORMAT__';
-
     //请求开始执行时间 KEY
     const REQUEST_RUN_START = '__RUN_START__';
     //请求开始执行占用内存 KEY
@@ -22,5 +19,9 @@ class RequestConf
     const REQUEST_MCA = '__MCA__';
     //请求ReqId
     const REQUEST_REQ_ID = '__REQ_ID__';
+    //输出不自动转换
+    const OUTPUT_NOT_FORMAT = '__NOT_FORMAT__';
+    //html输出
+    const OUTPUT_HTML = '__OUTPUT_HTML__';
 
 }
