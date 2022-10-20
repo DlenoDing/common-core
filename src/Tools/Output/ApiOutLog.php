@@ -25,6 +25,9 @@ class ApiOutLog
         if (!(new \ReflectionMethod($proceedingJoinPoint->className, $proceedingJoinPoint->methodName))->isPublic()) {
             return;
         }
+        if (Context::get(RequestConf::OUTPUT_NO_LOG)) {
+            return;
+        }
         if ($result instanceof ResponseInterface) {
             /** @var Response $result */
             $result = $result->getBody()

@@ -23,5 +23,7 @@ class RequestConf
     const OUTPUT_NOT_FORMAT = '__NOT_FORMAT__';
     //html输出
     const OUTPUT_HTML = '__OUTPUT_HTML__';
+    //不记录api正常输出日志
+    const OUTPUT_NO_LOG = '__OUTPUT_NO_LOG__';
 
 }

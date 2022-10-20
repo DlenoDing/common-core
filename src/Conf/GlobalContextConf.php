@@ -25,6 +25,7 @@ class GlobalContextConf
         RequestConf::REQUEST_REQ_ID,
         RequestConf::OUTPUT_NOT_FORMAT,
         RequestConf::OUTPUT_HTML,
+        RequestConf::OUTPUT_NO_LOG,
     ];
 
 }
