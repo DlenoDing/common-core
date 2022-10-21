@@ -36,7 +36,7 @@ class CheckParams
 
         //构建验证器
         $validationFactory = get_inject_obj(ValidatorFactoryInterface::class);
-        $validator         = $validationFactory->make($params, $rules, [], $customAttributes);
+        $validator         = $validationFactory->make($params, $rules, $messages, $customAttributes);
         $validator->validate();
 
         return true;
