@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Core\Aspect;
+namespace Dleno\CommonCore\Aspect;
 
 use Dleno\CommonCore\Conf\RequestConf;
 use Hyperf\Di\Annotation\Aspect;
