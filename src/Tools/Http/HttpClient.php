@@ -1,4 +1,5 @@
 <?php
+
 namespace Dleno\CommonCore\Tools\Http;
 
 use Hyperf\Utils\Coroutine;
@@ -6,11 +7,11 @@ use Hyperf\Utils\Coroutine;
 class HttpClient
 {
     private static $defaultHeader = [
-        'Host' => '',
-        'User-Agent' => 'Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)',
-        'Accept' => '*',
+        'Host'            => '',
+        'User-Agent'      => 'Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)',
+        'Accept'          => '*',
         'Accept-Encoding' => 'gzip',
-        'Content-Type' => 'application/json; charset=utf-8',
+        'Content-Type'    => 'application/json; charset=utf-8',
     ];
 
     /**
@@ -36,14 +37,21 @@ class HttpClient
      */
     public static function coPost(string $url, $data, array $header = [], $timeout = -1)
     {
-        $url = parse_url($url);
-        $ssl = $url['scheme'] == 'https' ? true : false;
-        $client = new \Swoole\Coroutine\Http\Client($url['host'], $ssl ? 443 : 80, $ssl);
+        $url    = parse_url($url);
+        $ssl    = $url['scheme'] == 'https' ? true : false;
+        $port   = $url['port'] ?? ($ssl ? 443 : 80);
+        $client = new \Swoole\Coroutine\Http\Client($url['host'], intval($port), $ssl);
         $client->set(['timeout' => $timeout]);//-1为不超时
-        $client->setHeaders(array_merge(self::$defaultHeader, [
-            'Host' => $url['host'],
-        ], $header));
-        $client->post($url['path'] . (isset($url['query']) ? '?' . $url['query'] : ''), $data);
+        $client->setHeaders(
+            array_merge(
+                self::$defaultHeader,
+                [
+                    'Host' => $url['host'],
+                ],
+                $header
+            )
+        );
+        $client->post(($url['path'] ?? '/') . (isset($url['query']) ? '?' . $url['query'] : ''), $data);
         $res = $client->body;
         $client->close();
         if (empty($res)) {
@@ -70,7 +78,7 @@ class HttpClient
         $paeseUrl = parse_url($url);
 
         $ch = curl_init();
-
+        curl_setopt($ch, CURLOPT_ENCODING, 'gzip,deflate');//文档解码
         //----连接设置----
         curl_setopt($ch, CURLOPT_FRESH_CONNECT, true);//强制获取一个新的连接，替代缓存中的连接
         curl_setopt($ch, CURLOPT_FORBID_REUSE, true);//在完成交互以后强迫断开连接，不能重用。
@@ -96,12 +104,19 @@ class HttpClient
         //头包含在输出中
         curl_setopt($ch, CURLOPT_HEADER, false);
         //请求发送头
-        $header = array_merge(self::$defaultHeader, [
-            'Host' => $paeseUrl['host'],
-        ], $header);
-        array_walk($header, function (&$val, $key) {
-            $val = $key . ": " . $val;
-        });
+        $header = array_merge(
+            self::$defaultHeader,
+            [
+                'Host' => $paeseUrl['host'],
+            ],
+            $header
+        );
+        array_walk(
+            $header,
+            function (&$val, $key) {
+                $val = $key . ": " . $val;
+            }
+        );
         curl_setopt($ch, CURLOPT_HTTPHEADER, $header);
 
         //-----返回结果-----
@@ -115,13 +130,12 @@ class HttpClient
         curl_setopt($ch, CURLOPT_URL, $url);
 
         $result = curl_exec($ch);//执行请求，返回输出结果
-        $errno  = curl_errno($ch);//错误号
-        $error  = curl_error($ch);//错误消息
-        $info   = curl_getinfo($ch);//调用详情
+        $errno = curl_errno($ch);//错误号
+        $error = curl_error($ch);//错误消息
+        $info  = curl_getinfo($ch);//调用详情
 
         //------关闭连接-----
         curl_close($ch);
-
 
         unset($errno, $error, $ch, $info, $params, $header, $method, $timeout, $userAgent, $content);
 
