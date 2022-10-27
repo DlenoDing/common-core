@@ -15,6 +15,7 @@ namespace Dleno\CommonCore\Model;
 use Hyperf\Contract\LengthAwarePaginatorInterface;
 use Hyperf\Database\Query\Expression;
 use Hyperf\Database\Model\Builder;
+use Hyperf\Database\Query\Grammars\Grammar;
 use Hyperf\DbConnection\Db;
 use Hyperf\Paginator\Paginator;
 use Hyperf\Utils\Arr;
@@ -265,4 +266,60 @@ class ModelBuilder extends Builder
 
         return parent::delete();
     }
+
+    /**
+     * insert or update a record
+     *
+     * @param array $values
+     * @param array $value
+     * @return bool
+     */
+    public function insertOnDuplicate(array $values, array $value)
+    {
+        $builder = $this->getQuery();   // 查询构造器
+        $grammar = $builder->getGrammar();  // 语法器
+        // 编译插入语句
+        $insert = $grammar->compileInsert($builder, $values);
+        // 编译重复后更新列语句。
+        $update = $this->compileUpdateColumns($grammar, $value);
+        // 构造查询语句
+        $query = $insert.' on duplicate key update '.$update;
+        // 组装sql绑定参数
+        $bindings = $this->prepareBindingsForInsertOnDuplicate($grammar, $values, $value);
+        // 执行数据库查询
+        return $this->getConnection()->insert($query, $bindings);
+    }
+
+    /**
+     * Compile all of the columns for an update statement.
+     *
+     * @param Grammar $grammar
+     * @param array $values
+     * @return string
+     */
+    private function compileUpdateColumns(Grammar $grammar, $values)
+    {
+        return collect($values)->map(function ($value, $key) use ($grammar) {
+            return $grammar->wrap($key).' = '.$grammar->parameter($value);
+        })->implode(', ');
+    }
+
+    /**
+     * Prepare the bindings for an insert or update statement.
+     *
+     * @param Grammar $grammar
+     * @param array $values
+     * @param array $value
+     * @return array
+     */
+    private function prepareBindingsForInsertOnDuplicate(Grammar $grammar, array $values, array $value)
+    {
+        // Merge array of bindings
+        $bindings = array_merge_recursive($values, $value);
+        // Remove all of the expressions from a list of bindings.
+        return array_values(array_filter(Arr::flatten($bindings, 1), function ($binding) use($grammar) {
+            return ! $grammar->isExpression($binding);
+        }));
+    }
+
 }
