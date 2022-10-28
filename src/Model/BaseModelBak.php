@@ -19,13 +19,13 @@ use Hyperf\DbConnection\Model\Model;
 use Hyperf\Utils\Str;
 
 /**
- * Class BaseModel
+ * Class BaseModelBak
  *
  * php bin/hyperf.php gen:model {table_name} --path app/Model/{Module}
  *
  * @package Dleno\CommonCore\Model
  */
-class BaseModel extends Model
+class BaseModelBak extends Model
 {
     //分表模式：0不分表1按年2按月3按日4按周5固定数量  [分表]
     const SPLIT_MODE_NO    = 0;
@@ -316,7 +316,7 @@ class BaseModel extends Model
      * @param null $alias 指定别名，不指定则使用属性定义
      * @param null $connection 数据连接名，不指定则使用属性定义
      * @param null $primaryId 分表时使用，用于根据$primaryId定位所属的表
-     * @return \Hyperf\Database\Model\Builder
+     * @return ModelBuilderBak
      */
     public static function getModel($alias = null, $connection = null, $primaryId = null)
     {
@@ -328,7 +328,7 @@ class BaseModel extends Model
      * @param null|string $alias 指定别名，不指定则使用属性定义
      * @param null|string $connection 数据连接名，不指定则使用属性定义
      * @param null|int $primaryId 分表时使用，用于根据$primaryId定位所属的表
-     * @return \Hyperf\Database\Model\Builder
+     * @return ModelBuilderBak
      */
     public static function query($alias = null, $connection = null, $primaryId = null)
     {
@@ -350,7 +350,7 @@ class BaseModel extends Model
      * @param null|string $connection 数据连接名，不指定则使用属性定义
      * @param null|string $alias 指定别名，不指定则使用属性定义
      * @param null|int $primaryId 分表时使用，用于根据$primaryId定位所属的表
-     * @return \Hyperf\Database\Model\Builder
+     * @return ModelBuilderBak
      */
     public static function on($connection = null, $alias = null, $primaryId = null)
     {
@@ -382,11 +382,22 @@ class BaseModel extends Model
      * Begin querying a model with eager loading.
      *
      * @param array|string $relations
-     * @return \Hyperf\Database\Model\Builder|static
+     * @return ModelBuilderBak|static
      */
     public static function with($relations, $connection = null)
     {
         return static::query(null, $connection)->with(is_string($relations) ? func_get_args() : $relations);
+    }
+
+    /**
+     * Create a new Model query builder for the model.
+     *
+     * @param \Hyperf\Database\Query\Builder $query
+     * @return ModelBuilderBak
+     */
+    public function newModelBuilder($query)
+    {
+        return new ModelBuilderBak($query);
     }
 
     /**

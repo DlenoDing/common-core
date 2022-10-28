@@ -23,15 +23,15 @@ use Hyperf\Utils\Str;
 use Dleno\CommonCore\Conf\RpcContextConf;
 
 /**
- * Class ModelBuilder
+ * Class ModelBuilderBak
  * @package Dleno\CommonCore\Model
  */
-class ModelBuilder extends Builder
+class ModelBuilderBak extends Builder
 {
     /**
      * The model being queried.
      *
-     * @var BaseModel
+     * @var BaseModelBak
      */
     protected $model;
 
@@ -99,7 +99,7 @@ class ModelBuilder extends Builder
     /**
      * Get the model instance being queried.
      *
-     * @return BaseModel
+     * @return BaseModelBak
      */
     public function getModel()
     {

@@ -19,6 +19,7 @@ use Hyperf\Utils\Serializer\SerializerFactory;
 use Hyperf\Utils\Serializer\Serializer;
 use Hyperf\Contract\NormalizerInterface;
 use Hyperf\Database\Commands\Ast\ModelUpdateVisitor as AstModelUpdateVisitor;
+use Hyperf\Database\Model\Builder;
 use Dleno\CommonCore\Model\ModelUpdateVisitor;
 
 class ConfigProvider
@@ -47,6 +48,7 @@ class ConfigProvider
                     'class_map' => [
                         // 需要映射的类名 => 类所在的文件地址
                         Coroutine::class => __DIR__ . '/class_map/Hyperf/Utils/Coroutine.php',
+                        Builder::class => __DIR__ . '/class_map/Hyperf/Database/Model/Builder.php',
                     ],
                     // ignore_annotations 数组内的注解都会被注解扫描器忽略
                     'ignore_annotations' => [
