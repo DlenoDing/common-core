@@ -105,9 +105,9 @@ class BaseModel extends Model
 
     /*
      * 当前表名（建新表时更新）[分表]
-     * @var string
+     * @var array
      */
-    protected static $currTable = '';
+    protected static $currTable = [];
 
     /**
      * Create a new Model model instance.
@@ -175,7 +175,7 @@ class BaseModel extends Model
 
     private function splitCheckInitTable($tableName, $primaryId = null)
     {
-        if (self::$currTable == $tableName) {
+        if ((static::$currTable[$this->baseTable] ?? '') == $tableName) {
             return true;
         }
         if (!Schema::hasTable($tableName)) {
@@ -200,9 +200,11 @@ class BaseModel extends Model
                 }
                 //show create table `table_name`;
                 $prefix = $this->getPrefix();
-                Db::connection($this->getConnectionName())->update('CREATE TABLE `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
+                Db::connection($this->getConnectionName())
+                  ->update('CREATE TABLE `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
                 if ($autoIncrement > 1) {
-                    Db::connection($this->getConnectionName())->update('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
+                    Db::connection($this->getConnectionName())
+                      ->update('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
                 }
             } catch (\Throwable $e) {
                 Logger::systemLog('DB-SPLIT-ERROR')
@@ -211,7 +213,7 @@ class BaseModel extends Model
         }
 
         if (empty($primaryId)) {
-            self::$currTable = $tableName;
+            self::$currTable[$this->baseTable] = $tableName;
         }
         return true;
     }
@@ -219,8 +221,8 @@ class BaseModel extends Model
     private function splitGetCurrTableByNum()
     {
         $tableName = $this->baseTable . '@';
-        if (!empty(self::$currTable)) {
-            $tableName = self::$currTable;
+        if (!empty(static::$currTable[$this->baseTable] ?? '')) {
+            $tableName = self::$currTable[$this->baseTable];
         } else {
             $mainTable = $this->splitGetMainTableData();
             $tableName .= sprintf("%05d", ceil(($mainTable['AUTO_INCREMENT'] ?? 1) / $this->splitMaxNum));
@@ -256,9 +258,10 @@ class BaseModel extends Model
     {
         $database  = $this->getDataBase();
         $prefix    = $this->getPrefix();
-        $tableName = Db::connection($this->getConnectionName())->select(
-            "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' and AUTO_INCREMENT>'{$primaryId}' ORDER BY `AUTO_INCREMENT` ASC LIMIT 1"
-        );
+        $tableName = Db::connection($this->getConnectionName())
+                       ->select(
+                           "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' and AUTO_INCREMENT>'{$primaryId}' ORDER BY `AUTO_INCREMENT` ASC LIMIT 1"
+                       );
         $tableName = $tableName['TABLE_NAME'] ?? null;
         return $tableName;
     }
@@ -267,9 +270,10 @@ class BaseModel extends Model
     {
         $database  = $this->getDataBase();
         $prefix    = $this->getPrefix();
-        $prevTable = Db::connection($this->getConnectionName())->select(
-            "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' ORDER BY `TABLE_NAME` DESC LIMIT 1"
-        );
+        $prevTable = Db::connection($this->getConnectionName())
+                       ->select(
+                           "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' ORDER BY `TABLE_NAME` DESC LIMIT 1"
+                       );
         $prevTable = $prevTable[0] ?? [];
         if (empty($prevTable)) {
             $prevTable = $this->splitGetMainTableData();
@@ -281,9 +285,10 @@ class BaseModel extends Model
     {
         $database  = $this->getDataBase();
         $prefix    = $this->getPrefix();
-        $prevTable = Db::connection($this->getConnectionName())->select(
-            "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` = '{$prefix}{$this->baseTable}' ORDER BY `TABLE_NAME` DESC LIMIT 1"
-        );
+        $prevTable = Db::connection($this->getConnectionName())
+                       ->select(
+                           "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` = '{$prefix}{$this->baseTable}' ORDER BY `TABLE_NAME` DESC LIMIT 1"
+                       );
         $prevTable = $prevTable[0] ?? [];
         return $prevTable;
     }
@@ -341,7 +346,7 @@ class BaseModel extends Model
             $instance->splitSetTableByPrimaryId($primaryId);
         }
         //IDE会提示类型不一致，忽略
-        return  $instance->newQuery();
+        return $instance->newQuery();
     }
 
     /**
@@ -364,7 +369,8 @@ class BaseModel extends Model
      */
     public static function onWriteConnection($connection = null, $alias = null)
     {
-        return static::query($alias, $connection)->useWritePdo();
+        return static::query($alias, $connection)
+                     ->useWritePdo();
     }
 
     /**
@@ -375,7 +381,8 @@ class BaseModel extends Model
      */
     public static function all($columns = ['*'], $connection = null)
     {
-        return static::query(null, $connection)->get(is_array($columns) ? $columns : func_get_args());
+        return static::query(null, $connection)
+                     ->get(is_array($columns) ? $columns : func_get_args());
     }
 
     /**
@@ -386,7 +393,8 @@ class BaseModel extends Model
      */
     public static function with($relations, $connection = null)
     {
-        return static::query(null, $connection)->with(is_string($relations) ? func_get_args() : $relations);
+        return static::query(null, $connection)
+                     ->with(is_string($relations) ? func_get_args() : $relations);
     }
 
     /**
