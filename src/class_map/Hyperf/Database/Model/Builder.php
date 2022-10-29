@@ -1417,10 +1417,11 @@ class Builder
     private function prepareBindingsForInsertOnDuplicate(Grammar $grammar, array $values, array $value)
     {
         // Merge array of bindings
-        $bindings = array_merge_recursive($values, $value);
+        $bindings = Arr::flatten($values);
+        $bindings = array_merge($bindings, array_values($value));
         // Remove all of the expressions from a list of bindings.
-        return array_values(array_filter(Arr::flatten($bindings, 1), function ($binding) use($grammar) {
-            return ! $grammar->isExpression($binding);
+        return array_values(array_filter($bindings, function ($binding) use($grammar) {
+            return !$grammar->isExpression($binding);
         }));
     }
 

@@ -1,7 +1,7 @@
 <?php
 namespace App\TaskCron;
 
-use App\Tools\Logger;
+use Dleno\CommonCore\Tools\Logger;
 use Hyperf\Crontab\Annotation\Crontab;
 
 /**
