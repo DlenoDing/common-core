@@ -116,6 +116,20 @@ if (!function_exists('get_query_val')) {
     }
 }
 
+if (!function_exists('go_run')) {
+    /**
+     * @param array|callable $callbacks
+     */
+    function go_run($callbacks)
+    {
+        if (!\Hyperf\Utils\Coroutine::inCoroutine()) {
+            run($callbacks);
+        } else {
+            go($callbacks);
+        }
+    }
+}
+
 if (!function_exists('array_to_json')) {
     /**
      * 数组转JSON
@@ -175,7 +189,6 @@ if (!function_exists('rpc_service_get')) {
     function rpc_service_get($service)
     {
         return get_inject_obj($service);
-
         /*$key = 'SERVICE_CLIENT::' . $service;
         if (!Context::has($key)) {
             $client = new \Dleno\CommonCore\JsonRpc\RpcClient($service);
@@ -347,18 +360,35 @@ if (!function_exists('catch_fatal_error_8888')) {
                           ->process(new Hyperf\Framework\Event\BootApplication());
             }
         }
-        $server = config('app_name') . '(' . \Dleno\CommonCore\Tools\Server::getIpAddr() . ')';
-
-        //发送钉钉消息
-        \Dleno\CommonCore\Tools\Notice\DingDing::send(
-            [
-                '启动错误'    => null,
-                'Server'  => $server,
-                'File'    => str_replace(BASE_PATH, '', $error["file"]),
-                'Line'    => $error["line"],
-                'Message' => str_replace(BASE_PATH, '', $error["message"]),
-            ]
-        );
+        if (class_exists(\Dleno\DingTalk\Robot::class)) {
+            try {
+                $msg = $error["message"] . ': ' . $error["line"] . ' -> ' . $error["file"];
+                throw new \Exception($msg);
+            } catch (\Throwable $e) {
+                static $traceConf = null;
+                if (empty($traceConf)) {
+                    $traceConf = config('dingtalk.trace', 'default');
+                    $config    = config('dingtalk.configs.' . $traceConf);
+                    if (empty($config)) {
+                        $traceConf = 'default';
+                    }
+                }
+                \Dleno\DingTalk\Robot::get($traceConf)
+                                     ->exception($e);
+            }
+        } else {
+            $server = config('app_name') . '(' . \Dleno\CommonCore\Tools\Server::getIpAddr() . ')';
+            //发送钉钉消息
+            \Dleno\CommonCore\Tools\Notice\DingDing::send(
+                [
+                    '启动错误'    => null,
+                    'Server'  => $server,
+                    'File'    => str_replace(BASE_PATH, '', $error["file"]),
+                    'Line'    => $error["line"],
+                    'Message' => str_replace(BASE_PATH, '', $error["message"]),
+                ]
+            );
+        }
 
         return true;
     }

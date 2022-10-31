@@ -35,6 +35,7 @@
         "hyperf/async-queue": "^2.2",
         "dleno/hyperf-env-multi": "~2.2.0",
         "dleno/hyperf-aliyun-acm": "~2.2.0",
+        "dleno/dingtalk": "~2.2.0",
         "symfony/serializer": "^5.0",
         "symfony/property-access": "^5.0"
     },

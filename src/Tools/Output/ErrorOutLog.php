@@ -2,6 +2,7 @@
 
 namespace Dleno\CommonCore\Tools\Output;
 
+use Dleno\DingTalk\Robot;
 use Hyperf\Utils\Coroutine;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Tools\Notice\DingDing;
@@ -13,6 +14,8 @@ class ErrorOutLog
     const LOG_INFO  = 'info';
     const LOG_ERROR = 'error';
     const LOG_ALERT = 'alert';
+
+    private static $traceConf = null;
 
     /**
      * 输出接口日志
@@ -50,7 +53,7 @@ class ErrorOutLog
                       );
 
                 //正确时输出调用的类和方法
-                $mca    = Server::getRouteMca();
+                $mca = Server::getRouteMca();
                 if ($mca) {
                     $method = join('\\', $mca['module']) . '\\' . $mca['ctrl'] . '->' . $mca['action'];
                 } else {
@@ -59,19 +62,28 @@ class ErrorOutLog
 
                 //发送钉钉消息
                 if ($notice) {
-                    DingDing::send(
-                        [
-                            '运行错误'  => null,
-                            'Server'   => $server,
-                            'Trace-Id' => $traceId,
-                            'Method'   => $method,
-                            'Message'  => $message,
-                            //'Trace'  => $trace,
-                        ]
-                    );
-                    /*DingDing::send(
-                        "Server::" . $server . "\nTrace-Id::" . $traceId . "\nMethod::" . $method . "\nMessage::" . $message
-                    );*/
+                    if (class_exists(Robot::class)) {
+                        if (empty(self::$traceConf)) {
+                            self::$traceConf = config('dingtalk.trace', 'default');
+                            $config    = config('dingtalk.configs.' . self::$traceConf);
+                            if (empty($config)) {
+                                self::$traceConf = 'default';
+                            }
+                        }
+                        Robot::get(self::$traceConf)
+                             ->exception($throwable);
+                    } else {
+                        DingDing::send(
+                            [
+                                '运行错误'     => null,
+                                'Server'   => $server,
+                                'Trace-Id' => $traceId,
+                                'Method'   => $method,
+                                'Message'  => $message,
+                                //'Trace'  => $trace,
+                            ]
+                        );
+                    }
                 }
             }
         );
