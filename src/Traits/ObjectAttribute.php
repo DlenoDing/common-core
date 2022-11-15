@@ -102,7 +102,7 @@ trait ObjectAttribute
             $setMethod     = 'set' . $capitalName;
             if (isset($data[$underLineName]) || isset($data[lcfirst($capitalName)])) {
                 $value = $data[$underLineName] ?? ($data[lcfirst($capitalName)] ?? null);
-                $value = $value == null ? '(null)' : $value;
+                $value = is_null($value) ? '(null)' : $value;
                 if ($reflectClass->hasMethod($setMethod)) {
                     $this->$setMethod($value);
                 }
