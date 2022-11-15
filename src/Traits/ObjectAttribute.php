@@ -1,4 +1,5 @@
 <?php
+
 namespace Dleno\CommonCore\Traits;
 
 use ReflectionClass;
@@ -20,14 +21,49 @@ trait ObjectAttribute
         $properties   = $reflectClass->getProperties();
         foreach ($properties as $property) {
             //获得获取属性的get方法
-            $method = 'get' . $this->underlineToCapital($property->getName());
-            //是否需要转小驼峰
-            $objProperty = $toUnderline
-                ? $this->capitalToUnderline($property->getName())
-                : $property->getName();
-            if ($reflectClass->hasMethod($method)) {
-                $data[$objProperty] = $this->$method() ?? null;
+            $propertyName = $this->underlineToCapital($property->getName());
+            $method       = 'get' . $propertyName;
+            if (!$reflectClass->hasMethod($method)) {
+                $method = $propertyName;
+                if (!$reflectClass->hasMethod($method)) {
+                    continue;
+                }
             }
+            //是否需要转小驼峰
+            $objProperty        = $toUnderline ? $this->capitalToUnderline($property->getName()) : $property->getName();
+            $val                = $this->$method();
+            $data[$objProperty] = $val == '(null)' ? null : $val;
+        }
+        return $data;
+    }
+
+    /**
+     * 將對象屬性轉為数组
+     * @param bool $toUnderline 是否需要将所有key转换成下划线方式(方便操作数据库)
+     * @return array
+     */
+    public function toData(): array
+    {
+        $data         = [];
+        $reflectClass = (new ReflectionClass($this));
+        $properties   = $reflectClass->getProperties();
+        foreach ($properties as $property) {
+            //获得获取属性的get方法
+            $propertyName = $this->underlineToCapital($property->getName());
+            $method       = 'get' . $propertyName;
+            if (!$reflectClass->hasMethod($method)) {
+                $method = $propertyName;
+                if (!$reflectClass->hasMethod($method)) {
+                    continue;
+                }
+            }
+
+            $objProperty = $this->capitalToUnderline($property->getName());
+            $val         = $this->$method();
+            if (is_null($val)) {
+                continue;
+            }
+            $data[$objProperty] = $val == '(null)' ? null : $val;
         }
         return $data;
     }
@@ -42,16 +78,19 @@ trait ObjectAttribute
         if (empty($data)) {
             return $this;
         }
-        $reflectionParams = new ReflectionClass($this);
-        $properties       = $reflectionParams->getProperties();
+        $reflectClass = new ReflectionClass($this);
+        $properties   = $reflectClass->getProperties();
         foreach ($properties as $property) {
             //分别获取属性的下划线/大驼峰名
             $underLineName = $this->capitalToUnderline($property->getName());
             $capitalName   = $this->underlineToCapital($property->getName());
             $setMethod     = 'set' . $capitalName;
-            $value         = $data[$underLineName] ?? ($data[lcfirst($capitalName)] ?? false);
-            if ($value !== false && $value !== '' && $reflectionParams->hasMethod($setMethod)) {
-                $this->$setMethod($value);
+            if (isset($data[$underLineName]) || isset($data[lcfirst($capitalName)])) {
+                $value = $data[$underLineName] ?? ($data[lcfirst($capitalName)] ?? null);
+                $value = $value == null ? '(null)' : $value;
+                if ($reflectClass->hasMethod($setMethod)) {
+                    $this->$setMethod($value);
+                }
             }
         }
         return $this;
@@ -81,7 +120,7 @@ trait ObjectAttribute
         for ($i = 0; $i < strlen($str); $i++) {
             $asciiCode = ord($str[$i]);
             if ($asciiCode >= 65 && $asciiCode <= 90) {
-                $temp .= ($i == 0?'':'_') . chr($asciiCode + 32);
+                $temp .= ($i == 0 ? '' : '_') . chr($asciiCode + 32);
             } else {
                 $temp .= $str[$i];
             }
