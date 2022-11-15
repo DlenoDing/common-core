@@ -10,6 +10,21 @@ use ReflectionClass;
 trait ObjectAttribute
 {
     /**
+     * get call拦截
+     *
+     * @param string $method
+     * @param array $parameters
+     */
+    public function __call($method, $parameters)
+    {
+        $val = $this->{$method}(...$parameters);
+        if (substr($method,0,3) == 'get') {
+            $val = $val == '(null)' ? null : $val;
+        }
+        return $val;
+    }
+
+    /**
      * 將對象屬性轉為数组
      * @param bool $toUnderline 是否需要将所有key转换成下划线方式(方便操作数据库)
      * @return array
