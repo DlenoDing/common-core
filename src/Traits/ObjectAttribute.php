@@ -67,7 +67,7 @@ trait ObjectAttribute
             $propertyName = $this->underlineToCapital($property->getName());
             $method       = 'get' . $propertyName;
             if (!$reflectClass->hasMethod($method)) {
-                $method = $propertyName;
+                $method = $property->getName();
                 if (!$reflectClass->hasMethod($method)) {
                     continue;
                 }
