@@ -19,7 +19,7 @@ trait ObjectAttribute
     {
         $val = $this->{$method}(...$parameters);
         if (substr($method,0,3) == 'get') {
-            $val = $val == '(null)' ? null : $val;
+            $val = ($val === '(null)' ? null : $val);
         }
         return $val;
     }
