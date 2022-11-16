@@ -47,7 +47,7 @@ trait ObjectAttribute
             //是否需要转小驼峰
             $objProperty        = $toUnderline ? $this->capitalToUnderline($property->getName()) : $property->getName();
             $val                = $this->$method();
-            $data[$objProperty] = $val == '(null)' ? null : $val;
+            $data[$objProperty] = ($val === '(null)' ? null : $val);
         }
         return $data;
     }
@@ -78,7 +78,7 @@ trait ObjectAttribute
             if (is_null($val)) {
                 continue;
             }
-            $data[$objProperty] = $val == '(null)' ? null : $val;
+            $data[$objProperty] = ($val === '(null)' ? null : $val);
         }
         return $data;
     }
