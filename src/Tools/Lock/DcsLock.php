@@ -11,6 +11,9 @@ use Hyperf\Context\Context;
 class DcsLock
 {
     private static $isWarning = false;
+
+    private static $unlock = [];
+
     /**
      * 加锁（使用分布式锁时$uuid建议使用雪花算法）
      * @param string $lockKey 锁key
@@ -30,9 +33,30 @@ class DcsLock
             $result = $result();
         }
         if ($result) {
-            defer(function () use ($lockKey, $uuid){
-                self::unlock($lockKey, $uuid);
-            });
+            //自动续期(所持有时间10秒及以上的才自动续期)
+            if ($time >= 10) {
+                go(
+                    function () use ($lockKey, $uuid, $time) {
+                        $redis = get_inject_obj(RedisFactory::class)->get(
+                            config('app.dcslock_redis_pool', 'default')
+                        );
+                        while (true) {
+                            if (!isset(self::$unlock[$lockKey . '::' . $uuid])) {
+                                return;
+                            }
+                            //提前2秒续期
+                            sleep($time - 2);
+                            $redis->expire($lockKey, $time);
+                        }
+                    }
+                );
+            }
+            //自动解锁
+            defer(
+                function () use ($lockKey, $uuid) {
+                    self::unlock($lockKey, $uuid);
+                }
+            );
         }
         return $result;
     }
@@ -49,6 +73,7 @@ class DcsLock
     {
         $redis = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
         if ($redis->set($lockKey, $uuid, ['NX', 'EX' => $time])) {
+            self::$unlock[$lockKey . '::' . $uuid] = true;
             return true;
         }
         if ($timeout === 0) {
@@ -118,13 +143,15 @@ EOF;
         if ($ret === false) {
             $ret = self::_unlock($redis, ...$params);
         }
+        unset(self::$unlock[$lockKey . '::' . $uuid]);
         return $ret ? true : false;
     }
 
     private static function _unlock(RedisProxy $redis, string $lockKey, string $lockKeyWait, string $uuid)
     {
         if (!self::$isWarning) {
-            Logger::stdoutLog()->warning('Current Redis Can\'t Execute Lua!!');
+            Logger::stdoutLog()
+                  ->warning('Current Redis Can\'t Execute Lua!!');
             self::$isWarning = true;
         }
         if ($redis->get($lockKey) == $uuid) {
