@@ -38,7 +38,7 @@ class BaseQueueConsumer extends AbstractProcess
         parent::__construct($container);
 
         $driver = get_inject_obj(BaseDriverFactory::class);
-        $queue = $this->getQueue() ?: 'default';
+        $queue  = $this->getQueue() ?: 'default';
         if (!$driver->has($queue)) {
             $config = $this->getConfig();
             if (is_array($config) && !empty($config)) {
@@ -52,16 +52,31 @@ class BaseQueueConsumer extends AbstractProcess
         $this->name = "queue.{$this->queue}";
         $this->nums = $this->config['processes'] ?? 1;
 
+        $handleTimeout = (intval($this->config['handle_timeout'] ?? 60) + 2) * 1000;
         foreach ($this->reloadChannel as $channel) {
+            //进程启动时reload一次（处理之前的）
             $this->driver->reload($channel);
+            //$handleTimeout时间后 reload一次（处理发布过程中被异常中断的）
+            \Swoole\Timer::after(
+                $handleTimeout,
+                function () use ($channel) {
+                    $this->driver->reload($channel);
+                }
+            );
         }
     }
 
     public function handle(): void
     {
-        if (! $this->driver instanceof DriverInterface) {
+        if (!$this->driver instanceof DriverInterface) {
             $logger = $this->container->get(StdoutLoggerInterface::class);
-            $logger->critical(sprintf('[CRITICAL] process %s is not work as expected, please check the config in [%s]', BaseQueueConsumer::class, 'config/autoload/queue.php'));
+            $logger->critical(
+                sprintf(
+                    '[CRITICAL] process %s is not work as expected, please check the config in [%s]',
+                    BaseQueueConsumer::class,
+                    'config/autoload/async_queue.php'
+                )
+            );
             return;
         }
 
