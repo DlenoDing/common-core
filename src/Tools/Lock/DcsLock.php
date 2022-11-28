@@ -35,19 +35,11 @@ class DcsLock
         if ($result) {
             //自动续期(所持有时间10秒及以上的才自动续期)
             if ($time >= 10) {
-                go(
-                    function () use ($lockKey, $uuid, $time) {
-                        $redis = get_inject_obj(RedisFactory::class)->get(
-                            config('app.dcslock_redis_pool', 'default')
-                        );
-                        while (true) {
-                            if (!isset(self::$unlock[$lockKey . '::' . $uuid])) {
-                                return;
-                            }
-                            //提前2秒续期
-                            sleep($time - 2);
-                            $redis->expire($lockKey, $time);
-                        }
+                $renewalTime = ($time - 2) * 1000;
+                \Swoole\Timer::after(
+                    $renewalTime,
+                    function () use ($lockKey, $uuid, $time, $renewalTime) {
+                        self::renewalLock($lockKey, $uuid, $time, $renewalTime);
                     }
                 );
             }
@@ -59,6 +51,31 @@ class DcsLock
             );
         }
         return $result;
+    }
+
+    /**
+     * 锁自动续约
+     * @param $lockKey
+     * @param $uuid
+     * @param $time
+     * @param $renewalTime
+     */
+    private static function renewalLock($lockKey, $uuid, $time, $renewalTime)
+    {
+        if (!isset(self::$unlock[$lockKey . '::' . $uuid])) {
+            return;
+        }
+        $redis = get_inject_obj(RedisFactory::class)->get(
+            config('app.dcslock_redis_pool', 'default')
+        );
+        $redis->expire($lockKey, $time);
+        //sleep方式某些情况下会导致::all coroutines (count: *) are asleep - deadlock!
+        \Swoole\Timer::after(
+            $renewalTime,
+            function () use ($lockKey, $uuid, $time, $renewalTime) {
+                self::renewalLock($lockKey, $uuid, $time, $renewalTime);
+            }
+        );
     }
 
     /**
