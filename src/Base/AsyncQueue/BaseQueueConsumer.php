@@ -32,6 +32,8 @@ class BaseQueueConsumer extends AbstractProcess
      */
     protected $reloadChannel = [];
 
+    protected $reloadCount = 3;
+
 
     public function __construct(ContainerInterface $container)
     {
@@ -66,27 +68,30 @@ class BaseQueueConsumer extends AbstractProcess
             );
             return;
         }
+        //开始reload机制，处理发布时的中断任务
+        $this->reloadChannels();
+
+        $this->driver->consume();
+    }
+
+    protected function reloadChannels($i = null)
+    {
+        $i = is_null($i) ? $this->reloadCount : $i;
 
         $handleTimeout = (intval($this->config['handle_timeout'] ?? 60) + 2) * 1000;
         foreach ($this->reloadChannel as $channel) {
-            //进程启动时reload一次（处理之前的）
             $this->driver->reload($channel);
-            //$handleTimeout时间后 reload一次（处理发布过程中被异常中断的）
-            \Swoole\Timer::after(
-                $handleTimeout,
-                function () use ($channel) {
-                    $this->driver->reload($channel);
-                }
-            );
-            \Swoole\Timer::after(
-                $handleTimeout * 2,
-                function () use ($channel) {
-                    $this->driver->reload($channel);
-                }
-            );
         }
-
-        $this->driver->consume();
+        $i--;
+        if ($i <= 0) {
+            return;
+        }
+        \Swoole\Timer::after(
+            $handleTimeout,
+            function () use ($i) {
+                $this->reloadChannels($i);
+            }
+        );
     }
 
     /**
