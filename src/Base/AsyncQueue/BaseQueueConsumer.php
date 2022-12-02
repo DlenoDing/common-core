@@ -78,6 +78,12 @@ class BaseQueueConsumer extends AbstractProcess
                     $this->driver->reload($channel);
                 }
             );
+            \Swoole\Timer::after(
+                $handleTimeout * 2,
+                function () use ($channel) {
+                    $this->driver->reload($channel);
+                }
+            );
         }
 
         $this->driver->consume();
