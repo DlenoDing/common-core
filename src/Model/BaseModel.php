@@ -13,7 +13,6 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Model;
 
 use Dleno\CommonCore\Tools\Logger;
-use Hyperf\Database\Schema\Schema;
 use Hyperf\DbConnection\Db;
 use Hyperf\DbConnection\Model\Model;
 use Hyperf\Utils\Str;
@@ -181,7 +180,7 @@ class BaseModel extends Model
         if ((static::$currTable[$connectionName][$this->baseTable] ?? '') == $tableName) {
             return true;
         }
-        if (!Schema::hasTable($tableName)) {
+        if (!$this->hasTable($tableName)) {
             try {
                 $autoIncrement = 1;
                 if (in_array(
@@ -221,10 +220,21 @@ class BaseModel extends Model
         return true;
     }
 
+    private function hasTable($tableName)
+    {
+        $database = $this->getDataBase();
+        $prefix   = $this->getPrefix();
+        $tables   = Db::connection($this->getConnectionName())
+                      ->select(
+                          "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` = '{$prefix}{$tableName}'"
+                      );
+        return count($tables) > 0;
+    }
+
     private function splitGetCurrTableByNum()
     {
         $connectionName = $this->getConnectionName();
-        $tableName = $this->baseTable . '@';
+        $tableName      = $this->baseTable . '@';
         if (!empty(static::$currTable[$connectionName][$this->baseTable] ?? '')) {
             $tableName = self::$currTable[$connectionName][$this->baseTable];
         } else {
@@ -266,6 +276,7 @@ class BaseModel extends Model
                        ->select(
                            "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' and AUTO_INCREMENT>'{$primaryId}' ORDER BY `AUTO_INCREMENT` ASC LIMIT 1"
                        );
+        $tableName = $tableName[0] ?? null;
         $tableName = $tableName['TABLE_NAME'] ?? null;
         return $tableName;
     }
