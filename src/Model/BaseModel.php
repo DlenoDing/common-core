@@ -112,8 +112,10 @@ class BaseModel extends Model
     /**
      * Create a new Model model instance.
      */
-    public function __construct(array $attributes = [])
+    public function __construct(array $attributes = [], $connection = null)
     {
+        $connection && $this->setConnection($connection);
+
         if (empty($this->baseTable)) {
             $this->baseTable = $this->table ?? Str::snake(Str::pluralStudly(class_basename($this)));
         }
@@ -175,7 +177,8 @@ class BaseModel extends Model
 
     private function splitCheckInitTable($tableName, $primaryId = null)
     {
-        if ((static::$currTable[$this->baseTable] ?? '') == $tableName) {
+        $connectionName = $this->getConnectionName();
+        if ((static::$currTable[$connectionName][$this->baseTable] ?? '') == $tableName) {
             return true;
         }
         if (!Schema::hasTable($tableName)) {
@@ -200,10 +203,10 @@ class BaseModel extends Model
                 }
                 //show create table `table_name`;
                 $prefix = $this->getPrefix();
-                Db::connection($this->getConnectionName())
+                Db::connection($connectionName)
                   ->update('CREATE TABLE `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
                 if ($autoIncrement > 1) {
-                    Db::connection($this->getConnectionName())
+                    Db::connection($connectionName)
                       ->update('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
                 }
             } catch (\Throwable $e) {
@@ -213,16 +216,17 @@ class BaseModel extends Model
         }
 
         if (empty($primaryId)) {
-            self::$currTable[$this->baseTable] = $tableName;
+            self::$currTable[$connectionName][$this->baseTable] = $tableName;
         }
         return true;
     }
 
     private function splitGetCurrTableByNum()
     {
+        $connectionName = $this->getConnectionName();
         $tableName = $this->baseTable . '@';
-        if (!empty(static::$currTable[$this->baseTable] ?? '')) {
-            $tableName = self::$currTable[$this->baseTable];
+        if (!empty(static::$currTable[$connectionName][$this->baseTable] ?? '')) {
+            $tableName = self::$currTable[$connectionName][$this->baseTable];
         } else {
             $mainTable = $this->splitGetMainTableData();
             $tableName .= sprintf("%05d", ceil(($mainTable['AUTO_INCREMENT'] ?? 1) / $this->splitMaxNum));
@@ -337,8 +341,7 @@ class BaseModel extends Model
      */
     public static function query($alias = null, $connection = null, $primaryId = null)
     {
-        $instance = new static();
-        $connection && $instance->setConnection($connection);
+        $instance = new static([], $connection);
         if (!empty($alias)) {
             $instance->setAlias($alias);
         }
