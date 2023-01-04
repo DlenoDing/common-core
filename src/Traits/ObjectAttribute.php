@@ -18,7 +18,7 @@ trait ObjectAttribute
     public function __call($method, $parameters)
     {
         $val = $this->{$method}(...$parameters);
-        if (substr($method,0,3) == 'get') {
+        if (substr($method, 0, 3) == 'get') {
             $val = ($val === '(null)' ? null : $val);
         }
         return $val;
@@ -39,9 +39,12 @@ trait ObjectAttribute
             $propertyName = $this->underlineToCapital($property->getName());
             $method       = 'get' . $propertyName;
             if (!$reflectClass->hasMethod($method)) {
-                $method = $property->getName();
+                $method = 'is' . $propertyName;
                 if (!$reflectClass->hasMethod($method)) {
-                    continue;
+                    $method = $property->getName();
+                    if (!$reflectClass->hasMethod($method)) {
+                        continue;
+                    }
                 }
             }
             //是否需要转小驼峰
@@ -67,9 +70,12 @@ trait ObjectAttribute
             $propertyName = $this->underlineToCapital($property->getName());
             $method       = 'get' . $propertyName;
             if (!$reflectClass->hasMethod($method)) {
-                $method = $property->getName();
+                $method = 'is' . $propertyName;
                 if (!$reflectClass->hasMethod($method)) {
-                    continue;
+                    $method = $property->getName();
+                    if (!$reflectClass->hasMethod($method)) {
+                        continue;
+                    }
                 }
             }
 
