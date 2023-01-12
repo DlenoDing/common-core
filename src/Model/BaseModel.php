@@ -108,10 +108,16 @@ class BaseModel extends Model
      */
     protected static $currTable = [];
 
+    /*
+     * 已存在表名（建新表时更新）[分表]
+     * @var array
+     */
+    protected static $hasTable = [];
+
     /**
      * Create a new Model model instance.
      */
-    public function __construct(array $attributes = [], $connection = null)
+    public function __construct(array $attributes = [], $connection = null, $tableName = null)
     {
         $connection && $this->setConnection($connection);
 
@@ -120,16 +126,22 @@ class BaseModel extends Model
         }
         if ($this->splitMode != self::SPLIT_MODE_NO) {
             $primaryId = $attributes[$this->primaryKey] ?? null;
-            $this->splitInitTable($primaryId);
+            $this->splitInitTable($tableName, $primaryId);
         }
         parent::__construct($attributes);
     }
 
-    private function splitInitTable($primaryId = null)
+    private function splitInitTable($tableName = null, $primaryId = null)
     {
-        $tableName = $this->splitGetCurrTableName($primaryId);
+        if (is_null($tableName) || $tableName === '') {
+            $isCurrTable = true;
+            $tableName = $this->splitGetCurrTableName($primaryId);
+        } else {
+            $isCurrTable = false;
+            $tableName = $this->baseTable . '@' . $tableName;
+        }
         $this->setTable($tableName);
-        $this->splitCheckInitTable($tableName, $primaryId);
+        $this->splitCheckInitTable($tableName, $isCurrTable, $primaryId);
     }
 
     private function splitGetCurrTableName($primaryId = null)
@@ -174,10 +186,13 @@ class BaseModel extends Model
         return $tableName;
     }
 
-    private function splitCheckInitTable($tableName, $primaryId = null)
+    private function splitCheckInitTable($tableName, $isCurrTable, $primaryId = null)
     {
         $connectionName = $this->getConnectionName();
-        if ((static::$currTable[$connectionName][$this->baseTable] ?? '') == $tableName) {
+        if ((static::$hasTable[$connectionName][$tableName] ?? false)) {
+            if ($isCurrTable && empty($primaryId)) {
+                self::$currTable[$connectionName][$this->baseTable] = $tableName;
+            }
             return true;
         }
         if (!$this->hasTable($tableName)) {
@@ -211,10 +226,12 @@ class BaseModel extends Model
             } catch (\Throwable $e) {
                 Logger::systemLog('DB-SPLIT-ERROR')
                       ->info($e->getMessage());
+
+                return false;
             }
         }
-
-        if (empty($primaryId)) {
+        self::$hasTable[$connectionName][$tableName] = true;
+        if ($isCurrTable && empty($primaryId)) {
             self::$currTable[$connectionName][$this->baseTable] = $tableName;
         }
         return true;
@@ -350,9 +367,9 @@ class BaseModel extends Model
      * @param null|int $primaryId 分表时使用，用于根据$primaryId定位所属的表
      * @return \Hyperf\Database\Model\Builder
      */
-    public static function query($alias = null, $connection = null, $primaryId = null)
+    public static function query($alias = null, $connection = null, $primaryId = null, $tableName = null)
     {
-        $instance = new static([], $connection);
+        $instance = new static([], $connection, $tableName);
         if (!empty($alias)) {
             $instance->setAlias($alias);
         }
@@ -374,6 +391,19 @@ class BaseModel extends Model
     public static function on($connection = null, $alias = null, $primaryId = null)
     {
         return static::query($alias, $connection, $primaryId);
+    }
+
+    /**
+     * Begin querying the model on a given connection.
+     *
+     * @param null|string $connection 数据连接名，不指定则使用属性定义
+     * @param null|string $connection 数据连接名，不指定则使用属性定义
+     * @param null|string $alias 指定别名，不指定则使用属性定义
+     * @return \Hyperf\Database\Model\Builder
+     */
+    public static function withTable($tableName, $connection = null, $alias = null)
+    {
+        return static::query($alias, $connection, null, $tableName);
     }
 
     /**
