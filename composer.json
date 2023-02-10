@@ -37,7 +37,10 @@
         "dleno/hyperf-aliyun-acm": "~2.2.0",
         "dleno/dingtalk": "~2.2.0",
         "symfony/serializer": "^5.0",
-        "symfony/property-access": "^5.0"
+        "symfony/property-access": "^5.0",
+        "hashids/hashids": "^4.1",
+        "jenssegers/optimus": "^1.1"
+
     },
     "require-dev": {
         "swoole/ide-helper": "^4.6"
