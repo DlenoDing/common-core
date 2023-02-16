@@ -5,6 +5,25 @@ namespace Dleno\CommonCore\Tools\Math;
 class Distribution
 {
     /**
+     * 根据数组的weight权重值返回对应元素
+     * @param array $data 需要计算的数据，weight为权重值
+     * @param int $enlarge 计算时放大倍数
+     * @return mixed
+     */
+    public static function getItemByWeight(array $data, $enlarge = 10)
+    {
+        $enlarge <= 0 && $enlarge = 5;
+        $temp = [];
+        foreach ($data as $v) {
+            $v['weight'] = $v['weight'] ?? 1;
+            $v['weight'] < 1 && $v['weight'] = 1;
+            $temp = array_merge($temp, array_fill(0, ($v['weight'] * $enlarge), $v));
+        }
+        shuffle($temp);
+        return $temp[array_rand($temp)];
+    }
+
+    /**
      * 按比例分配数据
      * @param $count
      * @param $data
