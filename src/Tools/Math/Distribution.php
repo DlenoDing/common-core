@@ -10,14 +10,15 @@ class Distribution
      * @param int $enlarge 计算时放大倍数
      * @return mixed
      */
-    public static function getItemByWeight(array $data, $enlarge = 10)
+    public function countWeight(array $data, int $enlarge = 1)
     {
-        $enlarge <= 0 && $enlarge = 5;
+        $enlarge <= 0 && $enlarge = 1;
         $temp = [];
         foreach ($data as $v) {
-            $v['weight'] = $v['weight'] ?? 1;
-            $v['weight'] < 1 && $v['weight'] = 1;
-            $temp = array_merge($temp, array_fill(0, ($v['weight'] * $enlarge), $v));
+            $v['weight'] = intval($v['weight'] ?? 0);
+            if ($v['weight'] > 0) {
+                $temp = array_merge($temp, array_fill(0, ($v['weight'] * $enlarge), $v));
+            }
         }
         shuffle($temp);
         return $temp[array_rand($temp)];
