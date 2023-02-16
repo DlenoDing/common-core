@@ -112,4 +112,29 @@ class Distribution
         return $data;
     }
 
+    public function test1(array $params)
+    {
+        $prizes = [
+            ['code' => 'A', 'weight' => 1],
+            ['code' => 'B', 'weight' => 1],
+            ['code' => 'C', 'weight' => 2],
+            ['code' => 'D', 'weight' => 0],
+            ['code' => 'E', 'weight' => 1],
+            ['code' => 'F', 'weight' => 2],
+            ['code' => 'G', 'weight' => 1],
+            ['code' => 'H', 'weight' => 4],
+            ['code' => 'I', 'weight' => 1],
+            ['code' => 'J', 'weight' => 1],
+        ];
+
+        $arr = [];
+        for ($i = 0; $i < 15000; $i++) {
+            $val               = $this->countWeight($prizes);
+            $arr[$val['code']] = ($arr[$val['code']] ?? 0) + 1;
+        }
+        var_dump($arr);
+
+        return [];
+    }
+
 }
