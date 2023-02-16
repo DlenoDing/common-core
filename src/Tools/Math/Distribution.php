@@ -10,7 +10,7 @@ class Distribution
      * @param int $enlarge 计算时放大倍数
      * @return mixed
      */
-    public function countWeight(array $data, int $enlarge = 1)
+    public static function getItemByWeight(array $data, int $enlarge = 1)
     {
         $enlarge <= 0 && $enlarge = 1;
         $temp = [];
