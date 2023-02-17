@@ -21,7 +21,7 @@ class Distribution
             }
         }
         shuffle($temp);
-        return $temp[array_rand($temp)];
+        return !empty($temp) ? $temp[array_rand($temp)] : null;
     }
 
     /**
