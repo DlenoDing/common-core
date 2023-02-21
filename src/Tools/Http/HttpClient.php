@@ -15,6 +15,21 @@ class HttpClient
     ];
 
     /**
+     * get请求
+     * @param string $url
+     * @param string|array $data
+     * @param array $header
+     */
+    public static function get(string $url, $data, array $header = [], $timeout = -1)
+    {
+        if (Coroutine::inCoroutine()) {
+            return self::coRequest($url, $data, 'GET', $header, $timeout);
+        } else {
+            return self::curlRequest($url, $data, 'GET', $header, $timeout);
+        }
+    }
+
+    /**
      * post请求
      * @param string $url
      * @param string|array $data
@@ -23,19 +38,86 @@ class HttpClient
     public static function post(string $url, $data, array $header = [], $timeout = -1)
     {
         if (Coroutine::inCoroutine()) {
-            return self::coPost($url, $data, $header, $timeout);
+            return self::coRequest($url, $data, 'POST', $header, $timeout);
         } else {
-            return self::curlPost($url, $data, $header, $timeout);
+            return self::curlRequest($url, $data, 'POST', $header, $timeout);
         }
     }
 
     /**
-     * 协程客户端发送post请求
+     * put请求
+     * @param string $url
+     * @param string|array $data
+     * @param array $header
+     */
+    public static function put(string $url, $data, array $header = [], $timeout = -1)
+    {
+        if (Coroutine::inCoroutine()) {
+            return self::coRequest($url, $data, 'PUT', $header, $timeout);
+        } else {
+            return self::curlRequest($url, $data, 'PUT', $header, $timeout);
+        }
+    }
+
+    /**
+     * PATCH请求
+     * @param string $url
+     * @param string|array $data
+     * @param array $header
+     */
+    public static function patch(string $url, $data, array $header = [], $timeout = -1)
+    {
+        if (Coroutine::inCoroutine()) {
+            return self::coRequest($url, $data, 'PATCH', $header, $timeout);
+        } else {
+            return self::curlRequest($url, $data, 'PATCH', $header, $timeout);
+        }
+    }
+
+    /**
+     * DELETE请求
+     * @param string $url
+     * @param string|array $data
+     * @param array $header
+     */
+    public static function delete(string $url, $data, array $header = [], $timeout = -1)
+    {
+        if (Coroutine::inCoroutine()) {
+            return self::coRequest($url, $data, 'DELETE', $header, $timeout);
+        } else {
+            return self::curlRequest($url, $data, 'DELETE', $header, $timeout);
+        }
+    }
+
+    /**
+     * coPost请求(兼容使用老包的方法)
      * @param string $url
      * @param string|array $data
      * @param array $header
      */
     public static function coPost(string $url, $data, array $header = [], $timeout = -1)
+    {
+        return self::coRequest($url, $data, 'POST', $header, $timeout);
+    }
+
+    /**
+     * curlPost请求(兼容使用老包的方法)
+     * @param string $url
+     * @param string|array $data
+     * @param array $header
+     */
+    public static function curlPost(string $url, $data, array $header = [], $timeout = -1)
+    {
+        return self::curlRequest($url, $data, 'POST', $header, $timeout);
+    }
+
+    /**
+     * 协程客户端发送请求
+     * @param string $url
+     * @param string|array $data
+     * @param array $header
+     */
+    public static function coRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = -1)
     {
         $url    = parse_url($url);
         $ssl    = $url['scheme'] == 'https' ? true : false;
@@ -51,7 +133,35 @@ class HttpClient
                 $header
             )
         );
-        $client->post(($url['path'] ?? '/') . (isset($url['query']) ? '?' . $url['query'] : ''), $data);
+        $path = ($url['path'] ?? '/') . (isset($url['query']) ? '?' . $url['query'] : '');
+        if ($method == 'POST') {
+            $client->post($path, $data);
+        } elseif ($method == 'PUT') {
+            $client->setMethod('PUT');
+            $client->setData($data);
+            $client->execute($path);
+        } elseif ($method == 'DELETE') {
+            $client->setMethod('DELETE');
+            $client->setData($data);
+            $client->execute($path);
+        } elseif ($method == 'PATCH') {
+            $client->setMethod('PATCH');
+            $client->setData($data);
+            $client->execute($path);
+        } else {
+            if ($data) {
+                if (is_array($data) || is_object($data)) {
+                    $data = http_build_query((array)$data);
+                }
+                if (isset($url['query'])) {
+                    $path .= '&' . $data;
+                } else {
+                    $path .= '?' . $data;
+                }
+            }
+            $client->get($path);
+        }
+
         $res = $client->body;
         $client->close();
         if (empty($res)) {
@@ -62,14 +172,15 @@ class HttpClient
     }
 
     /**
-     * 原生curl发送post请求
+     * 原生curl发送请求
      * @param string $url
      * @param $data
+     * @param string $method
      * @param array $header
      * @param int $timeout
      * @return bool|mixed|string
      */
-    public static function curlPost(string $url, $data, array $header = [], $timeout = -1)
+    public static function curlRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = -1)
     {
         if (is_array($data) || is_object($data)) {
             $data = http_build_query($data);
@@ -122,17 +233,36 @@ class HttpClient
         //-----返回结果-----
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);//不直接输出，返回的内容作为变量储存；curl_exec($ch)获取输出
 
-        //-----请求方式处理-----
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        if ($method == 'POST') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        } elseif ($method == 'PUT') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        } elseif ($method == 'DELETE') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE");
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        } elseif ($method == 'PATCH') {
+            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        } else {
+            if ($data) {
+                if (isset($paeseUrl['query'])) {
+                    $url .= '&' . $data;
+                } else {
+                    $url .= '?' . $data;
+                }
+            }
+        }
 
         //----请求地址----
         curl_setopt($ch, CURLOPT_URL, $url);
 
         $result = curl_exec($ch);//执行请求，返回输出结果
-        $errno = curl_errno($ch);//错误号
-        $error = curl_error($ch);//错误消息
-        $info  = curl_getinfo($ch);//调用详情
+        $errno  = curl_errno($ch);//错误号
+        $error  = curl_error($ch);//错误消息
+        $info   = curl_getinfo($ch);//调用详情
 
         //------关闭连接-----
         curl_close($ch);

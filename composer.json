@@ -14,6 +14,7 @@
     "require": {
         "php": ">=7.3",
         "ext-swoole": ">=4.7",
+        "ext-curl": "*",
         "hyperf/utils": "~2.2.0",
         "hyperf/command": "~2.2.0",
         "hyperf/config": "~2.2.0",
@@ -40,7 +41,6 @@
         "symfony/property-access": "^5.0",
         "hashids/hashids": "^4.1",
         "jenssegers/optimus": "^1.1"
-
     },
     "require-dev": {
         "swoole/ide-helper": "^4.6"
