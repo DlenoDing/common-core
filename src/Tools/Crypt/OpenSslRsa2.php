@@ -6,6 +6,9 @@ namespace Dleno\CommonCore\Tools\Crypt;
 
 class OpenSslRsa2
 {
+    const ENCRYPT_LEN = 117;
+    const DECRYPT_LEN = 128;
+
     public static $publicKey = '-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCnc2SqL+oj590/uZkvuk3Cbrru
 ezbDrTQmd8yu5+atQL5ZGUO4OZ5jJPyyFxAZvLKyqNQQYuf8b4FiOfhnnsLbUUUg
@@ -39,7 +42,14 @@ I8W9NStrSg/P/Dqk4yOJ3DhVUzU8G4qtLwVNWH0a1E15YDvhnl5ToqNkiDIEqfbf
     public static function encryptedByPrivateKey($dataContent, $privateKey = null)
     {
         $privateKey = $privateKey ?: self::$privateKey;
-        openssl_private_encrypt($dataContent, $encrypted, $privateKey);
+        $encrypted  = "";
+        $totalLen   = strlen($dataContent);
+        $encryptPos = 0;
+        while ($encryptPos < $totalLen) {
+            openssl_private_encrypt(substr($dataContent, $encryptPos, self::ENCRYPT_LEN), $encryptData, $privateKey);
+            $encrypted  .= $encryptData;
+            $encryptPos += self::ENCRYPT_LEN;
+        }
         return base64_encode($encrypted);
     }
 
@@ -51,8 +61,20 @@ I8W9NStrSg/P/Dqk4yOJ3DhVUzU8G4qtLwVNWH0a1E15YDvhnl5ToqNkiDIEqfbf
     public static function decryptByPrivateKey($encrypted, $privateKey = null)
     {
         $privateKey = $privateKey ?: self::$privateKey;
+        $decrypt    = "";
         $encrypted  = base64_decode($encrypted);
-        openssl_private_decrypt($encrypted, $decrypt, $privateKey);
+        $totalLen   = strlen($encrypted);
+        $decryptPos = 0;
+        while ($decryptPos < $totalLen) {
+            openssl_private_decrypt(
+                substr($encrypted, $decryptPos, self::DECRYPT_LEN),
+                $decryptData,
+                $privateKey
+            );
+            $decrypt    .= $decryptData;
+            $decryptPos += self::DECRYPT_LEN;
+        }
+
         return $decrypt;
     }
 
@@ -63,8 +85,15 @@ I8W9NStrSg/P/Dqk4yOJ3DhVUzU8G4qtLwVNWH0a1E15YDvhnl5ToqNkiDIEqfbf
      */
     public static function encryptedByPublicKey($dataContent, $publicKey = null)
     {
-        $publicKey = $publicKey ?: self::$publicKey;
-        openssl_public_encrypt($dataContent, $encrypted, $publicKey);
+        $publicKey  = $publicKey ?: self::$publicKey;
+        $encrypted  = "";
+        $totalLen   = strlen($dataContent);
+        $encryptPos = 0;
+        while ($encryptPos < $totalLen) {
+            openssl_public_encrypt(substr($dataContent, $encryptPos, self::ENCRYPT_LEN), $encryptData, $publicKey);
+            $encrypted  .= $encryptData;
+            $encryptPos += self::ENCRYPT_LEN;
+        }
         return base64_encode($encrypted);
     }
 
@@ -76,10 +105,20 @@ I8W9NStrSg/P/Dqk4yOJ3DhVUzU8G4qtLwVNWH0a1E15YDvhnl5ToqNkiDIEqfbf
      */
     public static function decryptByPublicKey($encrypted, $publicKey = null)
     {
-        $publicKey = $publicKey ?: self::$publicKey;
-        $encrypted = base64_decode($encrypted);
-        openssl_public_decrypt($encrypted, $decrypt, $publicKey);
-
+        $publicKey  = $publicKey ?: self::$publicKey;
+        $decrypt    = "";
+        $encrypted  = base64_decode($encrypted);
+        $totalLen   = strlen($encrypted);
+        $decryptPos = 0;
+        while ($decryptPos < $totalLen) {
+            openssl_public_decrypt(
+                substr($encrypted, $decryptPos, self::DECRYPT_LEN),
+                $decryptData,
+                $publicKey
+            );
+            $decrypt    .= $decryptData;
+            $decryptPos += self::DECRYPT_LEN;
+        }
         return $decrypt;
     }
 }
