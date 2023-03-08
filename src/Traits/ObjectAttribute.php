@@ -17,6 +17,9 @@ trait ObjectAttribute
      */
     public function __call($method, $parameters)
     {
+        if (!method_exists($this, $method)) {
+            return null;
+        }
         $val = $this->{$method}(...$parameters);
         if (substr($method, 0, 3) == 'get') {
             $val = ($val === '(null)' ? null : $val);
