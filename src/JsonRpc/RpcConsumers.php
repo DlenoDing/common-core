@@ -2,7 +2,6 @@
 
 namespace Dleno\CommonCore\JsonRpc;
 
-use Dleno\CommonCore\Conf\RpcConsumersConf;
 use Dleno\CommonCore\Tools\Arrays\ArrayTool;
 
 /**

@@ -277,9 +277,10 @@ if (!function_exists('dynamic_rpc_service_get')) {
      * @param string $serviceName
      * @param string $interfaceClass
      * @param array $node
+     * @param array $registry
      * @return mixed Entry.
      */
-    function dynamic_rpc_service_get(string $serviceName, string $interfaceClass, array $node = [])
+    function dynamic_rpc_service_get(string $serviceName, string $interfaceClass, array $node = [], array $registry = [])
     {
         static $service = [];
         if (!isset($service[$serviceName])) {
@@ -289,9 +290,10 @@ if (!function_exists('dynamic_rpc_service_get')) {
             if (empty($consumer)) {
                 throw new \RuntimeException('Empty Services Consumers!!');
             }
-            $consumer['name']    = $serviceName;
-            $consumer['service'] = $consumer['id'] = $interfaceClass;
-            $consumer['nodes']   = $node;
+            $consumer['name']     = $serviceName;
+            $consumer['service']  = $consumer['id'] = $interfaceClass;
+            $consumer['registry'] = $registry;
+            $consumer['nodes']    = $node;
 
             $consumers[] = $consumer;
             $config->set('services.consumers', $consumers);
