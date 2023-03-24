@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore;
 
+use Hyperf\Amqp\Listener\MainWorkerStartListener;
 use Hyperf\JsonRpc\JsonRpcPoolTransporter;
 use Hyperf\JsonRpc\JsonRpcTransporter;
 use Hyperf\Utils\Coroutine;
@@ -42,13 +43,14 @@ class ConfigProvider
             ],
             'annotations'  => [
                 'scan' => [
-                    'paths'     => [
+                    'paths'              => [
                         __DIR__,
                     ],
-                    'class_map' => [
+                    'class_map'          => [
                         // 需要映射的类名 => 类所在的文件地址
-                        Coroutine::class => __DIR__ . '/class_map/Hyperf/Utils/Coroutine.php',
-                        Builder::class => __DIR__ . '/class_map/Hyperf/Database/Model/Builder.php',
+                        Coroutine::class               => __DIR__ . '/class_map/Hyperf/Utils/Coroutine.php',
+                        Builder::class                 => __DIR__ . '/class_map/Hyperf/Database/Model/Builder.php',
+                        MainWorkerStartListener::class => __DIR__ . '/class_map/Hyperf/Amqp/Listener/MainWorkerStartListener.php',
                     ],
                     // ignore_annotations 数组内的注解都会被注解扫描器忽略
                     'ignore_annotations' => [
