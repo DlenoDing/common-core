@@ -7,6 +7,7 @@ namespace Dleno\CommonCore\Conf;
  */
 class RpcContextConf
 {
+    const IN_RPC_SERVER = '__IN_RPC_SERVER__';//是否在rpc服务内
     const TRACE_ID = '_TRACE_ID_';//请求跟踪号
     const LANGUAGE = '_LANGUAGE_';//语言
     const TIMEZONE = '_TIMEZONE_';//时区
