@@ -17,6 +17,8 @@ class GlobalContextConf
         //rpc上下文
         \Hyperf\Rpc\Context::class . '::DATA',
         //系统其它需要共享拷贝的上下文
+        RpcContextConf::IN_RPC_SERVER,
+        RequestConf::IN_HTTP_SERVER,
         RequestConf::REQUEST_TRACE_ID,
         RequestConf::REQUEST_RUN_START,
         RequestConf::REQUEST_RUN_MEM,
