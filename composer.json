@@ -34,6 +34,7 @@
         "hyperf/guzzle": "~2.2.0",
         "hyperf/amqp": "~2.2.0",
         "hyperf/async-queue": "^2.2",
+        "hyperf/signal": "~2.2.0",
         "dleno/hyperf-env-multi": "~2.2.0",
         "dleno/dingtalk": "~2.2.0",
         "symfony/serializer": "^5.0",
