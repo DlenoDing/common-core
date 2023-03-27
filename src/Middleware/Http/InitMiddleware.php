@@ -25,6 +25,8 @@ class InitMiddleware implements MiddlewareInterface
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
+        Context::set(RequestConf::IN_HTTP_SERVER, true);
+
         //服务器固定时区运行
         date_default_timezone_set(config('app.default_time_zone', 'UTC'));
 

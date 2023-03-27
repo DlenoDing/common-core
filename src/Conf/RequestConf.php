@@ -7,6 +7,8 @@ namespace Dleno\CommonCore\Conf;
  */
 class RequestConf
 {
+    //是否在http服务内
+    const IN_HTTP_SERVER = '__IN_HTTP_SERVER__';
     //请求开始执行时间 KEY
     const REQUEST_RUN_START = '__RUN_START__';
     //请求开始执行占用内存 KEY
