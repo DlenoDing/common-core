@@ -954,7 +954,8 @@ class Builder
      */
     public function delete()
     {
-        $table = $this->getModel()->getTable('');
+        $table = $this->getModel()
+                      ->getTable('');
         if (!empty($table)) {
             $this->from($table);
         }
@@ -1286,7 +1287,10 @@ class Builder
         $sql = $builder->select($countField)
                        ->getSql();
 
-        $count = Db::connection($this->getModel()->getConnectionName())
+        $count = Db::connection(
+            $this->getModel()
+                 ->getConnectionName()
+        )
                    ->select('select count(*) as aggregate from(' . $sql . ') t where 1');
         $count = $count[0]['aggregate'] ?? 0;
 
@@ -1301,8 +1305,12 @@ class Builder
      * @param int|null $page
      * @return LengthAwarePaginatorInterface
      */
-    private function mypaginate(?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): LengthAwarePaginatorInterface
-    {
+    private function mypaginate(
+        ?int $perPage = null,
+        array $columns = ['*'],
+        string $pageName = 'page',
+        ?int $page = null
+    ): LengthAwarePaginatorInterface {
         $page = $page ?: Paginator::resolveCurrentPage($pageName);
 
         $perPage = $perPage ?: $this->model->getPerPage();
@@ -1314,10 +1322,16 @@ class Builder
                    ->get($columns)
             : $this->model->newCollection();
 
-        return $this->paginator($results, $total, $perPage, $page, [
-            'path'     => Paginator::resolveCurrentPath(),
-            'pageName' => $pageName,
-        ]);
+        return $this->paginator(
+            $results,
+            $total,
+            $perPage,
+            $page,
+            [
+                'path'     => Paginator::resolveCurrentPath(),
+                'pageName' => $pageName,
+            ]
+        );
     }
 
     /**
@@ -1358,14 +1372,39 @@ class Builder
      * @param null $mode
      * @return $this
      */
-    public function whereFullText($columns, $text, $boolMode = false)
+    public function whereFullText($columns, $text, $mode = null)
     {
         if (is_array($columns)) {
             $columns = join(',', $columns);
         }
-        $text = addslashes($text);
-        $boolMode = $boolMode?' IN BOOLEAN MODE':'';
-        $this->whereRaw("MATCH ($columns) AGAINST ('{$text}'{$boolMode})");
+        $text    = addslashes($text);
+        $modeVal = '';
+        if ((is_bool($mode) && $mode) || $mode === 'BOOLEAN') {
+            /*
+            $text 语法：
+                  无符号 默认情况，代表或，自动分词搜索
+                  + 必须出现
+                  - 必须不出现
+                  > 提高该条匹配数据的权重值
+                  < 降低该条匹配数据的权重值
+                  () 相当于表达式分组，和我们数学中的表达式一个道理
+                  ~ 将其相关性由正转负，表示拥有该字会降低相关性
+                  * 通配符，只能在字符串后面使用
+                  " 完全匹配，被双引号包起来的单词必须整个被匹配
+                  @distance 用来测试两个或两个以上的单词是否都在一个指定的距离内
+            */
+            $modeVal = ' IN BOOLEAN MODE';
+        } elseif ($mode === 'LANGUAGE') {
+            $modeVal = ' IN NATURAL LANGUAGE MODE';
+        } elseif ($mode === 'LANGUAGE_EX') {
+            $modeVal = ' IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION';
+        } elseif ($mode === 'EXPANSION') {
+            $modeVal = ' WITH QUERY EXPANSION';
+        } elseif (!is_null($mode)) {
+            $modeVal = ' ' . $mode;
+        }
+
+        $this->whereRaw("MATCH ($columns) AGAINST ('{$text}'{$modeVal})");
         return $this;
     }
 
@@ -1385,11 +1424,12 @@ class Builder
         // 编译重复后更新列语句。
         $update = $this->compileUpdateColumns($grammar, $value);
         // 构造查询语句
-        $query = $insert.' on duplicate key update '.$update;
+        $query = $insert . ' on duplicate key update ' . $update;
         // 组装sql绑定参数
         $bindings = $this->prepareBindingsForInsertOnDuplicate($grammar, $values, $value);
         // 执行数据库查询
-        return $this->getConnection()->insert($query, $bindings);
+        return $this->getConnection()
+                    ->insert($query, $bindings);
     }
 
     /**
@@ -1401,9 +1441,13 @@ class Builder
      */
     private function compileUpdateColumns(Grammar $grammar, $values)
     {
-        return collect($values)->map(function ($value, $key) use ($grammar) {
-            return $grammar->wrap($key).' = '.$grammar->parameter($value);
-        })->implode(', ');
+        return collect($values)
+            ->map(
+                function ($value, $key) use ($grammar) {
+                    return $grammar->wrap($key) . ' = ' . $grammar->parameter($value);
+                }
+            )
+            ->implode(', ');
     }
 
     /**
@@ -1420,9 +1464,14 @@ class Builder
         $bindings = Arr::flatten($values);
         $bindings = array_merge($bindings, array_values($value));
         // Remove all of the expressions from a list of bindings.
-        return array_values(array_filter($bindings, function ($binding) use($grammar) {
-            return !$grammar->isExpression($binding);
-        }));
+        return array_values(
+            array_filter(
+                $bindings,
+                function ($binding) use ($grammar) {
+                    return !$grammar->isExpression($binding);
+                }
+            )
+        );
     }
 
     /**
