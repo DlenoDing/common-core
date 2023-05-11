@@ -2,6 +2,7 @@
 
 namespace Dleno\CommonCore\Tools;
 
+use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\HttpServer\Router\Dispatched;
 use Hyperf\Context\Context;
 use Dleno\CommonCore\Conf\RequestConf;
@@ -131,5 +132,42 @@ class Server
         }
         reset($macs);
         return current($macs);
+    }
+
+    public static function swooleLoaderCheck()
+    {
+        if (!extension_loaded('swoole_loader')) {
+            return true;
+        }
+        $request = get_inject_obj(RequestInterface::class);
+        if (!($request instanceof RequestInterface)) {
+            return true;
+        }
+        $requestHost = $request->getUri()
+                               ->getHost();
+        if (empty($requestHost)) {
+            return true;
+        }
+        $licenseData = swoole_get_license();
+        $licenseData = ($licenseData ?? []) ?: [];
+
+        if (!in_array($requestHost, ['localhost', '127.0.0.1'])) {
+            foreach ($licenseData as $license) {
+                $hostnames = explode(',', $license['hostname']);
+                foreach ($hostnames as $hostname) {
+                    if (substr($hostname, 0, 1) === '*') {
+                        $hostname = substr($hostname, 1);
+                        if (strpos($requestHost, $hostname)) {
+                            return true;
+                        }
+                    } else {
+                        if ($requestHost == $hostname) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
     }
 }
