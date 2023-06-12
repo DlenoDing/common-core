@@ -7,6 +7,7 @@ use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
 use Hyperf\Snowflake\IdGeneratorInterface;
 use Hyperf\Context\Context;
+use Swoole\Coroutine as SwooleCo;
 
 class DcsLock
 {
@@ -36,10 +37,11 @@ class DcsLock
             //自动续期(所持有时间10秒及以上的才自动续期)
             if ($time >= 10) {
                 $renewalTime = ($time - 2) * 1000;
+                $cid         = SwooleCo::getCid();
                 \Swoole\Timer::after(
                     $renewalTime,
-                    function () use ($lockKey, $uuid, $time, $renewalTime) {
-                        self::renewalLock($lockKey, $uuid, $time, $renewalTime);
+                    function () use ($lockKey, $uuid, $time, $renewalTime, $cid) {
+                        self::renewalLock($lockKey, $uuid, $time, $renewalTime, $cid);
                     }
                 );
             }
@@ -59,10 +61,16 @@ class DcsLock
      * @param $uuid
      * @param $time
      * @param $renewalTime
+     * @param $cid
      */
-    private static function renewalLock($lockKey, $uuid, $time, $renewalTime)
+    private static function renewalLock($lockKey, $uuid, $time, $renewalTime, $cid)
     {
         if (!isset(self::$unlock[$lockKey . '::' . $uuid])) {
+            return;
+        }
+        //执行加锁的协程不存在，则自动解锁，防止加锁协程异常中断，又未执行defer
+        if (!SwooleCo::exists($cid)) {
+            self::unlock($lockKey, $uuid);
             return;
         }
         $redis = get_inject_obj(RedisFactory::class)->get(
@@ -72,8 +80,8 @@ class DcsLock
         //sleep方式某些情况下会导致::all coroutines (count: *) are asleep - deadlock!
         \Swoole\Timer::after(
             $renewalTime,
-            function () use ($lockKey, $uuid, $time, $renewalTime) {
-                self::renewalLock($lockKey, $uuid, $time, $renewalTime);
+            function () use ($lockKey, $uuid, $time, $renewalTime, $cid) {
+                self::renewalLock($lockKey, $uuid, $time, $renewalTime, $cid);
             }
         );
     }
