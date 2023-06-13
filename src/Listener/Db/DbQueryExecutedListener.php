@@ -45,12 +45,21 @@ class DbQueryExecutedListener implements ListenerInterface
                         $sql = Str::replaceFirst('?', "'{$value}'", $sql);
                     }
                 }
-                $sql     = str_replace(PHP_EOL, " ", $sql);
-                $sql     = str_replace("\r", "", $sql);
+                $sql = str_replace(PHP_EOL, " ", $sql);
+                $sql = str_replace("\r", "", $sql);
                 $traceId = Server::getTraceId();
                 $server = config('app_name') . '(' . Server::getIpAddr() . ')';
                 Logger::sqlLog(Logger::SQL_CHANNEL_QUERY)
-                      ->debug(sprintf('Server::%s||Trace-Id::%s||[%s]||%s', $server, $traceId, $event->time, $sql));
+                      ->debug(
+                          sprintf(
+                              'Server::%s||Trace-Id::%s||Connection::%s||[%s]||%s',
+                              $server,
+                              $traceId,
+                              $event->connectionName,
+                              $event->time,
+                              $sql
+                          )
+                      );
             }
         }
     }
