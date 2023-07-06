@@ -548,4 +548,9 @@ class BaseModel extends Model
 
         return parent::newInstance($attributes, $exists);
     }
+
+    public function inserts(array $datas)
+    {
+        return Db::table($this->getTable())->insert($datas);
+    }
 }
