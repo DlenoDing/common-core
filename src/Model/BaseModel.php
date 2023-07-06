@@ -470,6 +470,14 @@ class BaseModel extends Model
         return (new static())->getTable($alias);
     }
 
+    public static function insertOnDuplicateVal($item)
+    {
+        $data = [];
+        foreach ($item as $k => $v) {
+            $data[$k] = Db::raw('values(' . $k . ')');
+        }
+        return $data;
+    }
 
     /**
      * 获取表名，可重新指定别名
