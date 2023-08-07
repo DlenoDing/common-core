@@ -165,7 +165,7 @@ if (!function_exists('array_to_xml')) {
     function array_to_xml(array $data, \SimpleXMLElement $xml = null, $parentKey = null)
     {
         if ($xml === null) {
-            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="GBK"?><xml></xml>');
+            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><xml></xml>');
         }
         foreach ($data as $key => $value) {
             if (is_array($value)) {
