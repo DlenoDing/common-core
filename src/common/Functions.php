@@ -154,6 +154,75 @@ if (!function_exists('json_to_array')) {
     }
 }
 
+if (!function_exists('array_to_xml')) {
+    /**
+     * 数组转xml
+     * @param array $data
+     * @param SimpleXMLElement|null $xml
+     * @param $parentKey
+     * @return false|string
+     */
+    function array_to_xml(array $data, \SimpleXMLElement $xml = null, $parentKey = null)
+    {
+        if ($xml === null) {
+            $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="GBK"?><xml></xml>');
+        }
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                if (is_numeric($key)) {
+                    array_to_xml($value, $xml->addChild($parentKey), $parentKey);
+                } else {
+                    if (array_is_list($value)) {
+                        array_to_xml($value, $xml, $key);
+                    } else {
+                        array_to_xml($value, $xml->addChild($key), $key);
+                    }
+                }
+            } else {
+                if (is_numeric($key)) {
+                    $xml->addChild($parentKey, htmlspecialchars($value));
+                } else {
+                    $xml->addChild($key, htmlspecialchars($value));
+                }
+            }
+        }
+        return $xml->asXML();
+    }
+}
+
+if (!function_exists('xml_to_array')) {
+    /**
+     * xml转数组
+     * @param $xml
+     * @return array
+     */
+    function xml_to_array($xml)
+    {
+        return json_to_array(json_encode(simplexml_load_string($xml)));
+    }
+}
+
+if (!function_exists('array_is_list')) {
+    /**
+     * 判断数组是否是列表数据
+     * @param $value
+     * @return bool
+     */
+    function array_is_list($value)
+    {
+        $num = count($value);
+        if (!isset($value[0]) || !isset($value[$num - 1])) {
+            return false;
+        }
+        for ($i = 0; $i < $num; $i++) {
+            if (!isset($value[$i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
 if (!function_exists('get_inject_obj')) {
     /**
      * 获取注入对象
@@ -280,8 +349,12 @@ if (!function_exists('dynamic_rpc_service_get')) {
      * @param array $registry
      * @return mixed Entry.
      */
-    function dynamic_rpc_service_get(string $serviceName, string $interfaceClass, array $node = [], array $registry = [])
-    {
+    function dynamic_rpc_service_get(
+        string $serviceName,
+        string $interfaceClass,
+        array $node = [],
+        array $registry = []
+    ) {
         static $service = [];
         if (!isset($service[$serviceName])) {
             $config    = get_inject_obj(\Hyperf\Contract\ConfigInterface::class);
@@ -383,11 +456,11 @@ if (!function_exists('catch_fatal_error_8888')) {
             //发送钉钉消息
             \Dleno\CommonCore\Tools\Notice\DingDing::send(
                 [
-                    '启动错误'    => null,
-                    'Server'  => $server,
-                    'File'    => str_replace(BASE_PATH, '', $error["file"]),
-                    'Line'    => $error["line"],
-                    'Message' => str_replace(BASE_PATH, '', $error["message"]),
+                    '启动错误' => null,
+                    'Server'   => $server,
+                    'File'     => str_replace(BASE_PATH, '', $error["file"]),
+                    'Line'     => $error["line"],
+                    'Message'  => str_replace(BASE_PATH, '', $error["message"]),
                 ]
             );
         }
