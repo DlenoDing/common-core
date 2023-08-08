@@ -180,9 +180,9 @@ if (!function_exists('array_to_xml')) {
                 }
             } else {
                 if (is_numeric($key)) {
-                    $xml->addChild($parentKey, htmlspecialchars($value));
+                    $xml->addChild($parentKey, htmlspecialchars($value . ''));
                 } else {
-                    $xml->addChild($key, htmlspecialchars($value));
+                    $xml->addChild($key, htmlspecialchars($value . ''));
                 }
             }
         }
