@@ -17,6 +17,9 @@ class Server
      */
     public static function isProd()
     {
+        if (env('IS_PROD', false)) {
+            return true;
+        }
         if (config('app_env') == 'prod') {
             return true;
         }
