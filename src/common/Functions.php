@@ -198,7 +198,7 @@ if (!function_exists('xml_to_array')) {
      */
     function xml_to_array($xml)
     {
-        return json_to_array(json_encode(simplexml_load_string($xml)));
+        return json_to_array(json_encode(simplexml_load_string($xml, null, LIBXML_NOCDATA)));
     }
 }
 
