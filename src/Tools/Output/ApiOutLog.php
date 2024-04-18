@@ -40,6 +40,7 @@ class ApiOutLog
                 $request = ApplicationContext::getContainer()
                                              ->get(ServerRequestInterface::class);
                 $url     = $request->path();
+                $query   = $request->getQueryParams();
                 $post    = $request->getParsedBody();
                 $headers = $request->getHeaders();
 
@@ -73,12 +74,13 @@ class ApiOutLog
                 Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Ip::%s||Url::%s||Header::%s||Post::%s||Response::%s',
+                              'Server::%s||Trace-Id::%s||Ip::%s||Url::%s||Header::%s||Query::%s||Post::%s||Response::%s',
                               $server,
                               $traceId,
                               $clientIp,
                               $url,
                               array_to_json($headers),
+                              array_to_json($query),
                               array_to_json($post),
                               $result
                           ),
