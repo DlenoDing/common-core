@@ -87,16 +87,22 @@ class InitMiddleware implements MiddlewareInterface
         if (get_header_val('Client-ManagerId', 0)) {
             rpc_context_set(RpcContextConf::MANAGER_ID, (int)get_header_val('Client-ManagerId', 0));//管理员ID
         }
+        //处理参数
+        $this->initRequest();
+
+        //其他RPC上下文写在对应项目的自定义中间件内
+        //rpc_context_set('testKey', 'i am api');
+
+        return $handler->handle($request);
+    }
+
+    public function initRequest()
+    {
         if (get_post_val('page')) {
             rpc_context_set(RpcContextConf::PAGE, (int)get_post_val('page'));//页码
         }
         if (get_post_val('perPage')) {
             rpc_context_set(RpcContextConf::PER_PAGE, (int)get_post_val('perPage'));//每页记录数
         }
-
-        //其他RPC上下文写在对应项目的自定义中间件内
-        //rpc_context_set('testKey', 'i am api');
-
-        return $handler->handle($request);
     }
 }
