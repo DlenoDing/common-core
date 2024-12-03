@@ -401,6 +401,21 @@ if (!function_exists('dynamic_rpc_service_get')) {
     }
 }
 
+if (!function_exists('format_bytes')) {
+    function format_bytes($bytes, $precision = 2)
+    {
+        $units = array("b", "kb", "mb", "gb", "tb");
+
+        $bytes = max($bytes, 0);
+        $pow   = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow   = min($pow, count($units) - 1);
+
+        $bytes /= (1 << (10 * $pow));
+
+        return round($bytes, $precision) . " " . $units[$pow];
+    }
+}
+
 if (!function_exists('catch_fatal_error_8888')) {
     /**
      * 捕获系统Fatal error错误

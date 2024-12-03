@@ -83,25 +83,9 @@ class WsOutLog
                               array_to_json($post),
                               $result
                           ),
-                          self::runData()
+                          Server::runData()
                       );
             }
         );
-    }
-
-    /**
-     * 获取资源消耗
-     * @return array
-     */
-    private static function runData(): array
-    {
-        $return = [];
-        // 显示运行时间
-        $return['time'] = number_format((microtime(true) - Context::get(RequestConf::REQUEST_RUN_START)), 4) . 's';
-        // 显示运行内存
-        $return['memory'] = number_format(
-                                (memory_get_usage() - Context::get(RequestConf::REQUEST_RUN_MEM)) / 1024
-                            ) . 'kb';
-        return $return;
     }
 }

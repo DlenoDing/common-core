@@ -26,6 +26,17 @@ class Server
         return false;
     }
 
+    public static function runData()
+    {
+        $return = [];
+        // 显示运行时间
+        $return['time'] = number_format((microtime(true) - Context::get(RequestConf::REQUEST_RUN_START)), 4) . 's';
+        // 显示运行内存
+        $return['memory']     = format_bytes(memory_get_usage() - Context::get(RequestConf::REQUEST_RUN_MEM));
+        $return['memory_max'] = format_bytes(memory_get_peak_usage() - Context::get(RequestConf::REQUEST_RUN_MEM));
+        return $return;
+    }
+
     /**
      * MCA:module ctrl action
      * @return array

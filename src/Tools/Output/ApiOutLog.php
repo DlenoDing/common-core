@@ -52,10 +52,15 @@ class ApiOutLog
                     $val = strtolower($val);
                 });
                 $filterHeaders = config('app.filter_headers', [
-                    'content-type', 'client-key', 'client-timestamp', 'client-nonce', 'client-sign', 'client-accesskey',
+                    'content-type',
+                    'client-key',
+                    'client-timestamp',
+                    'client-nonce',
+                    'client-sign',
+                    'client-accesskey',
                 ]);
                 array_walk($filterHeaders, function (&$val) {
-                        $val = strtolower($val);
+                    $val = strtolower($val);
                 });
                 $allowHeaders = array_diff($allowHeaders, $filterHeaders);
                 foreach ($headers as $key => $val) {
@@ -68,8 +73,8 @@ class ApiOutLog
 
                 $server = config('app_name') . '(' . Server::getIpAddr() . ')';
 
-                $traceId = Server::getTraceId();
-                $channel = $channel ?? Logger::API_CHANNEL_RESPONSE;
+                $traceId  = Server::getTraceId();
+                $channel  = $channel ?? Logger::API_CHANNEL_RESPONSE;
                 $clientIp = Client::getIP();
                 Logger::apiLog($channel, $group)
                       ->info(
@@ -84,25 +89,9 @@ class ApiOutLog
                               array_to_json($post),
                               $result
                           ),
-                          self::runData()
+                          Server::runData()
                       );
             }
         );
-    }
-
-    /**
-     * 获取资源消耗
-     * @return array
-     */
-    private static function runData(): array
-    {
-        $return = [];
-        // 显示运行时间
-        $return['time'] = number_format((microtime(true) - Context::get(RequestConf::REQUEST_RUN_START)), 4) . 's';
-        // 显示运行内存
-        $return['memory'] = number_format(
-                                (memory_get_usage() - Context::get(RequestConf::REQUEST_RUN_MEM)) / 1024
-                            ) . 'kb';
-        return $return;
     }
 }
