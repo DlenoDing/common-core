@@ -416,6 +416,18 @@ if (!function_exists('format_bytes')) {
     }
 }
 
+if (!function_exists('second2txt')) {
+    function second2txt($second)
+    {
+        $d = floor($second / (3600 * 24));
+        $h = floor(($second % (3600 * 24)) / 3600);
+        $m = floor((($second % (3600 * 24)) % 3600) / 60);
+        $s = $second - ($d * 24 * 3600) - ($h * 3600) - ($m * 60);
+
+        return (empty($d) ? '' : $d . '天') . (empty($h) ? '' : $h . '时') . (empty($m) ? '' : $m . '分') . (empty($s) ? '' : $s . '秒');
+    }
+}
+
 if (!function_exists('catch_fatal_error_8888')) {
     /**
      * 捕获系统Fatal error错误
