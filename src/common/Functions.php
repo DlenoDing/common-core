@@ -138,7 +138,7 @@ if (!function_exists('array_to_json')) {
      */
     function array_to_json(array $array)
     {
-        return \json_encode($array, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return \json_encode($array, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
     }
 }
 
