@@ -428,6 +428,20 @@ if (!function_exists('second2txt')) {
     }
 }
 
+if (!function_exists('number_to_letter')) {
+    function number_to_letter($number)
+    {
+        $str = '';
+        while ($number > 0) {
+            $number--;
+            $rmd    = $number % 26;
+            $str    = chr(65 + $rmd) . $str;
+            $number = intval($number / 26);
+        }
+        return $str;
+    }
+}
+
 if (!function_exists('catch_fatal_error_8888')) {
     /**
      * 捕获系统Fatal error错误
