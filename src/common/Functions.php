@@ -449,7 +449,6 @@ if (!function_exists('str_to_time')) {
             return 0;
         }
         $result = strtotime($strTime);
-        var_dump($result);
         if (empty($result)) {
             $date   = new \DateTime($strTime);
             $result = $date->format('U');
