@@ -442,6 +442,22 @@ if (!function_exists('number_to_letter')) {
     }
 }
 
+if (!function_exists('str_to_time')) {
+    function str_to_time($strTime)
+    {
+        if (empty($strTime)) {
+            return 0;
+        }
+        $result = strtotime($strTime);
+        var_dump($result);
+        if (empty($result)) {
+            $date   = new \DateTime($strTime);
+            $result = $date->format('U');
+        }
+        return $result;
+    }
+}
+
 if (!function_exists('catch_fatal_error_8888')) {
     /**
      * 捕获系统Fatal error错误
