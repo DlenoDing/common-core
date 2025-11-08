@@ -123,10 +123,10 @@ if (!function_exists('go_run')) {
      */
     function go_run($callbacks)
     {
-        if (!\Hyperf\Utils\Coroutine::inCoroutine()) {
-            run($callbacks);
+        if (!\Hyperf\Coroutine\Coroutine::inCoroutine()) {
+            \Hyperf\Coroutine\run($callbacks);
         } else {
-            go($callbacks);
+            \Hyperf\Coroutine\go($callbacks);
         }
     }
 }
@@ -137,9 +137,11 @@ if (!function_exists('array_to_json')) {
      * @param array $array
      * @return false|string
      */
-    function array_to_json(array $array)
-    {
-        return \json_encode($array, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+    function array_to_json(
+        array $array,
+        $options = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION
+    ) {
+        return \json_encode($array, $options);
     }
 }
 
@@ -245,7 +247,7 @@ if (!function_exists('set_inject_obj')) {
     function set_inject_obj($key, $entry)
     {
         ApplicationContext::getContainer()
-                                 ->set($key, $entry);
+                          ->set($key, $entry);
     }
 }
 
@@ -373,15 +375,17 @@ if (!function_exists('dynamic_rpc_service_get')) {
 
             $serviceFactory = get_inject_obj(\Hyperf\RpcClient\ProxyFactory::class);
 
-            /** @var Hyperf\Di\Definition\DefinitionSourceInterface $definitions */
-            $definitions = ApplicationContext::getContainer()
-                                             ->getDefinitionSource();
+            $container = ApplicationContext::getContainer();
 
             $proxyClass = $serviceFactory->createProxy($interfaceClass);
 
-            $definitions->addDefinition(
+            $container->define(
                 $consumer['name'],
-                function (\Psr\Container\ContainerInterface $container) use ($consumer, $interfaceClass, $proxyClass) {
+                function (\Psr\Container\ContainerInterface $container) use (
+                    $consumer,
+                    $interfaceClass,
+                    $proxyClass
+                ) {
                     return new $proxyClass(
                         $container,
                         $consumer['name'],
@@ -461,75 +465,4 @@ if (!function_exists('str_to_time')) {
         }
         return $result;
     }
-}
-
-if (!function_exists('catch_fatal_error_8888')) {
-    /**
-     * 捕获系统Fatal error错误
-     */
-    function catch_fatal_error_8888()
-    {
-        $error = error_get_last();
-        if (!isset($error['type'])) {
-            return true;
-        }
-        switch ($error['type']) {
-            case E_ERROR:
-            case E_WARNING:
-            case E_PARSE:
-                //case E_NOTICE:
-            case E_CORE_ERROR:
-            case E_CORE_WARNING:
-            case E_COMPILE_ERROR:
-            case E_COMPILE_WARNING:
-            case E_STRICT:
-            case E_RECOVERABLE_ERROR:
-                break;
-            default:
-                return true;
-        }
-
-        if (!ApplicationContext::hasContainer()) {
-            /** @var Psr\Container\ContainerInterface $container */
-            $container = require BASE_PATH . '/config/container.php';
-            if (class_exists(Dleno\HyperfEnvMulti\MultiEnvListener::class)) {
-                $container->get(Dleno\HyperfEnvMulti\MultiEnvListener::class)
-                          ->process(new Hyperf\Framework\Event\BootApplication());
-            }
-        }
-        if (class_exists(\Dleno\DingTalk\Robot::class)) {
-            try {
-                $msg = $error["message"] . ': ' . $error["line"] . ' -> ' . $error["file"];
-                throw new \Exception($msg);
-            } catch (\Throwable $e) {
-                static $traceConf = null;
-                if (empty($traceConf)) {
-                    $traceConf = \Hyperf\Config\config('dingtalk.trace', 'default');
-                    $config    = \Hyperf\Config\config('dingtalk.configs.' . $traceConf);
-                    if (empty($config)) {
-                        $traceConf = 'default';
-                    }
-                }
-                \Dleno\DingTalk\Robot::get($traceConf)
-                                     ->exception($e);
-            }
-        } else {
-            $server = \Hyperf\Config\config('app_name') . '(' . \Dleno\CommonCore\Tools\Server::getIpAddr() . ')';
-            //发送钉钉消息
-            \Dleno\CommonCore\Tools\Notice\DingDing::send(
-                [
-                    '启动错误' => null,
-                    'Server'   => $server,
-                    'File'     => str_replace(BASE_PATH, '', $error["file"]),
-                    'Line'     => $error["line"],
-                    'Message'  => str_replace(BASE_PATH, '', $error["message"]),
-                ]
-            );
-        }
-
-        return true;
-    }
-
-    //注册
-    register_shutdown_function('catch_fatal_error_8888');
 }
