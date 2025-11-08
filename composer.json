@@ -30,6 +30,7 @@
         "hyperf/amqp": "~3.1.0",
         "hyperf/async-queue": "^3.1",
         "hyperf/signal": "~3.1.0",
+        "hyperf/crontab": "~3.1.0",
         "dleno/hyperf-env-multi": "~3.1.0",
         "dleno/dingtalk": "~3.1.0",
         "symfony/serializer": "^5.0",

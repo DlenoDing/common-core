@@ -13,20 +13,18 @@ use Dleno\CommonCore\Exception\ServerException;
 use Dleno\CommonCore\Tools\Check\CheckParams;
 use Dleno\CommonCore\Tools\Lock\DcsLock;
 use Dleno\CommonCore\Tools\OutPut;
+use Psr\Container\ContainerInterface;
 
 class BaseCoreController
 {
-    /**
-     * @Inject
-     * @var RequestInterface
-     */
-    protected $request;
+    #[Inject]
+    protected ContainerInterface $container;
 
-    /**
-     * @Inject
-     * @var ResponseInterface
-     */
-    protected $response;
+    #[Inject]
+    protected RequestInterface $request;
+
+    #[Inject]
+    protected ResponseInterface $response;
 
     /**
      * 对应服务

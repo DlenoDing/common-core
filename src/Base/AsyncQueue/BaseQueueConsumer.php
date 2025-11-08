@@ -12,28 +12,15 @@ use Psr\Container\ContainerInterface;
 
 class BaseQueueConsumer extends AbstractProcess
 {
-    /**
-     * @var string
-     */
-    protected $queue = null;
+    protected string $queue = 'default';
 
-    /**
-     * @var DriverInterface
-     */
-    protected $driver;
+    protected DriverInterface $driver;
 
-    /**
-     * @var array
-     */
-    protected $config;
+    protected array $config;
 
-    /**
-     * @var array
-     */
-    protected $reloadChannel = [];
+    protected array $reloadChannel = [];
 
-    protected $reloadCount = 3;
-
+    protected int $reloadCount = 3;
 
     public function __construct(ContainerInterface $container)
     {
