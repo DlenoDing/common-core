@@ -22,9 +22,7 @@ use Hyperf\Stringable\Str;
 
 use function Hyperf\Config\config;
 
-/**
- * @Listener
- */
+#[Listener]
 class DbQueryExecutedListener implements ListenerInterface
 {
     public function listen(): array

@@ -15,9 +15,7 @@ use Hyperf\Process\Event\BeforeProcessHandle;
 
 use function Hyperf\Config\config;
 
-/**
- * @Listener()
- */
+#[Listener]
 class InitListener implements ListenerInterface
 {
     /**
