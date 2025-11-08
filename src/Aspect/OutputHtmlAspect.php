@@ -33,7 +33,8 @@ class OutputHtmlAspect extends AbstractAspect
         // 在调用后进行某些处理
         $response = Context::get(ResponseInterface::class);
         // 设置返回数据格式及编码
-        $response = $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+        $response = $response->withoutHeader('Content-Type')
+                             ->withHeader('Content-Type', 'text/html; charset=utf-8');
         Context::set(ResponseInterface::class, $response);
 
         return $result;

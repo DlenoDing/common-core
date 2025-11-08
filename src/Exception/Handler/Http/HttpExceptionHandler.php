@@ -37,7 +37,8 @@ class HttpExceptionHandler extends \Hyperf\HttpServer\Exception\Handler\HttpExce
 
         if (Context::get(RequestConf::OUTPUT_HTML)) {
             $output   = $message;
-            $response = $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+            $response = $response->withoutHeader('Content-Type')
+                                 ->withHeader('Content-Type', 'text/html; charset=utf-8');
         } else {
             $output = OutPut::outJsonToError($message, $code);
         }

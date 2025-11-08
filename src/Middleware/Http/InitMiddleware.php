@@ -45,6 +45,7 @@ class InitMiddleware implements MiddlewareInterface
         $response     = $response
             ->withHeader('Server', config('app_name', 'MyServer'))
             // 设置返回数据格式及编码
+            ->withoutHeader('Content-Type')
             ->withHeader('Content-Type', 'application/json; charset=utf-8')
             // 跨域处理
             ->withHeader('Access-Control-Allow-Credentials', 'true')
