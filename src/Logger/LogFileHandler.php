@@ -23,7 +23,6 @@ class LogFileHandler extends RotatingFileHandler
     {
         $thisLevel = $this->level->value;
         $recordLevel = $record->level->value;
-        var_dump($thisLevel, $recordLevel);
         if ($recordLevel == Level::Debug->value) {
             return Level::Debug->value == $thisLevel;
         } elseif (in_array(
