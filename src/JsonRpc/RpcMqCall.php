@@ -3,13 +3,11 @@
 namespace Dleno\CommonCore\JsonRpc;
 
 use Hyperf\Context\Context;
-use Hyperf\Utils\Coroutine;
+use Hyperf\Coroutine\Coroutine;
 use Dleno\CommonCore\Conf\RequestConf;
-use Dleno\CommonCore\Conf\RpcConsumersConf;
 use Dleno\CommonCore\Conf\RpcContextConf;
 use Dleno\CommonCore\Exception\ServerException;
 use Dleno\CommonCore\Tools\Amqp\Producer;
-use Dleno\CommonCore\Tools\Arrays\ArrayTool;
 use Dleno\CommonCore\Tools\Server;
 
 /**

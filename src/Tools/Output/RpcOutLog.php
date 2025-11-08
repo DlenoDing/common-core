@@ -4,12 +4,12 @@ namespace Dleno\CommonCore\Tools\Output;
 
 use Hyperf\Di\Aop\ProceedingJoinPoint;
 use Hyperf\HttpServer\Response;
-use Hyperf\Context\Context;
-use Hyperf\Utils\Coroutine;
-use Dleno\CommonCore\Conf\RequestConf;
+use Hyperf\Coroutine\Coroutine;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Tools\Server;
 use Psr\Http\Message\ResponseInterface;
+
+use function Hyperf\Config\config;
 
 class RpcOutLog
 {

@@ -20,9 +20,9 @@ class ValidationExceptionHandler extends \Hyperf\Validation\ValidationExceptionH
 {
     /**
      * Handle the exception, and return the specified result.
-     * @WsExceptionHandlerLog()
      * @param ValidationException $throwable
      */
+    #[WsExceptionHandlerLog]
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         $this->stopPropagation();

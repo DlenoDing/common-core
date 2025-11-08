@@ -5,7 +5,6 @@ namespace Dleno\CommonCore\Tools\Check;
 
 
 use Hyperf\Validation\Contract\ValidatorFactoryInterface;
-use Dleno\CommonCore\Exception\AppException;
 use Dleno\CommonCore\Tools\Language;
 use Dleno\CommonCore\Tools\Server;
 

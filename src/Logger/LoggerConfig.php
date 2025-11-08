@@ -3,7 +3,7 @@
 namespace Dleno\CommonCore\Logger;
 
 use Monolog\Formatter;
-use Monolog\Logger;
+use Monolog\Level;
 
 /**
  * 日志配置相关
@@ -25,7 +25,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/system-debug.log',
-                            'level' => Logger::DEBUG,
+                            'level' => Level::Debug,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -41,7 +41,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/system-info.log',
-                            'level' => Logger::INFO,
+                            'level' => Level::Info,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -57,7 +57,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/system-error.log',
-                            'level' => Logger::ERROR,
+                            'level' => Level::Error,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -77,7 +77,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/sql-debug.log',
-                            'level' => Logger::DEBUG,
+                            'level' => Level::Debug,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -93,7 +93,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/sql-info.log',
-                            'level' => Logger::INFO,
+                            'level' => Level::Info,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -109,7 +109,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/sql-error.log',
-                            'level' => Logger::ERROR,
+                            'level' => Level::Error,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -129,7 +129,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/api-debug.log',
-                            'level' => Logger::DEBUG,
+                            'level' => Level::Debug,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -145,7 +145,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/api-info.log',
-                            'level' => Logger::INFO,
+                            'level' => Level::Info,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -161,7 +161,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/api-error.log',
-                            'level' => Logger::ERROR,
+                            'level' => Level::Error,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -181,7 +181,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/business-debug.log',
-                            'level' => Logger::DEBUG,
+                            'level' => Level::Debug,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -197,7 +197,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/business-info.log',
-                            'level' => Logger::INFO,
+                            'level' => Level::Info,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [
@@ -213,7 +213,7 @@ class LoggerConfig
                         'class' => LogFileHandler::class,
                         'constructor' => [
                             'filename' => BASE_PATH . '/runtime/logs/api/business-error.log',
-                            'level' => Logger::ERROR,
+                            'level' => Level::Error,
                             'maxFiles' => 1,
                         ],
                         'formatter' => [

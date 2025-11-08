@@ -14,7 +14,7 @@ declare(strict_types=1);
 use Dleno\CommonCore\Conf\GlobalConf;
 use Dleno\CommonCore\Tools\Client;
 use Dleno\CommonCore\Tools\Check\CheckVal;
-use Hyperf\Utils\ApplicationContext;
+use Hyperf\Context\ApplicationContext;
 use Hyperf\Context\Context;
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -241,11 +241,10 @@ if (!function_exists('set_inject_obj')) {
     /**
      * 获取注入对象
      * @param string $key
-     * @return mixed Entry.
      */
     function set_inject_obj($key, $entry)
     {
-        return ApplicationContext::getContainer()
+        ApplicationContext::getContainer()
                                  ->set($key, $entry);
     }
 }
@@ -313,7 +312,7 @@ if (!function_exists('date_zone')) {
      */
     function date_zone($format, $timestamp, $toZone = null, $fromZone = null)
     {
-        $fromZone    = $fromZone ?? config('app.default_time_zone', 'UTC');
+        $fromZone    = $fromZone ?? \Hyperf\Config\config('app.default_time_zone', 'UTC');
         $toZone      = $toZone ?? Client::getTimezone();
         $dateTime    = date(GlobalConf::DATE_TIME_FORMAT, $timestamp);
         $dateTimeObj = new \DateTime($dateTime, new DateTimeZone($fromZone));
@@ -334,7 +333,7 @@ if (!function_exists('zone_date')) {
     function zone_date($dateTime, $format = 'U', $fromZone = null, $toZone = null)
     {
         $fromZone = $fromZone ?? Client::getTimezone();
-        $toZone   = $toZone ?? config('app.default_time_zone', 'UTC');
+        $toZone   = $toZone ?? \Hyperf\Config\config('app.default_time_zone', 'UTC');
         $datetime = new \DateTime($dateTime, new DateTimeZone($fromZone));
         $datetime->setTimezone(new DateTimeZone($toZone));
         return $datetime->format($format);
@@ -505,8 +504,8 @@ if (!function_exists('catch_fatal_error_8888')) {
             } catch (\Throwable $e) {
                 static $traceConf = null;
                 if (empty($traceConf)) {
-                    $traceConf = config('dingtalk.trace', 'default');
-                    $config    = config('dingtalk.configs.' . $traceConf);
+                    $traceConf = \Hyperf\Config\config('dingtalk.trace', 'default');
+                    $config    = \Hyperf\Config\config('dingtalk.configs.' . $traceConf);
                     if (empty($config)) {
                         $traceConf = 'default';
                     }
@@ -515,7 +514,7 @@ if (!function_exists('catch_fatal_error_8888')) {
                                      ->exception($e);
             }
         } else {
-            $server = config('app_name') . '(' . \Dleno\CommonCore\Tools\Server::getIpAddr() . ')';
+            $server = \Hyperf\Config\config('app_name') . '(' . \Dleno\CommonCore\Tools\Server::getIpAddr() . ')';
             //发送钉钉消息
             \Dleno\CommonCore\Tools\Notice\DingDing::send(
                 [

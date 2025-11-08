@@ -13,9 +13,13 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Model;
 
 use Dleno\CommonCore\Tools\Logger;
+use Hyperf\Database\Model\Builder;
 use Hyperf\DbConnection\Db;
 use Hyperf\DbConnection\Model\Model;
-use Hyperf\Utils\Str;
+use Hyperf\Stringable\Str;
+
+use function Hyperf\Config\config;
+use function Hyperf\Support\class_basename;
 
 /**
  * Class BaseModel
@@ -60,7 +64,7 @@ class BaseModel extends Model
      * 对应表名
      * @var string
      */
-    protected $table;
+    protected ?string $table = null;
 
 
     /**
@@ -73,7 +77,7 @@ class BaseModel extends Model
      * 表主键
      * @var string
      */
-    protected $primaryKey = 'id';
+    protected string $primaryKey = 'id';
 
     /**
      * 对应表名(基础表名)[分表]
@@ -100,7 +104,7 @@ class BaseModel extends Model
     public $isAlias = true;
 
     //不管理时间字段
-    public $timestamps = false;
+    public bool $timestamps = false;
 
     /*
      * 当前表名（建新表时更新）[分表]
@@ -409,7 +413,7 @@ class BaseModel extends Model
     /**
      * Begin querying the model on the write connection.
      *
-     * @return \Hyperf\Database\Query\Builder
+     * @return Builder<static>
      */
     public static function onWriteConnection($connection = null, $alias = null)
     {
@@ -484,7 +488,7 @@ class BaseModel extends Model
      * @param null $alias
      * @return string
      */
-    public function getTable($alias = null)
+    public function getTable($alias = null): string
     {
         $table = $this->table ?? Str::snake(Str::pluralStudly(class_basename($this)));
         if ($this->isAlias) {

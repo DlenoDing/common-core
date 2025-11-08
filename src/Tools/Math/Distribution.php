@@ -129,7 +129,7 @@ class Distribution
 
         $arr = [];
         for ($i = 0; $i < 15000; $i++) {
-            $val               = $this->countWeight($prizes);
+            $val               = $this->getItemByWeight($prizes);
             $arr[$val['code']] = ($arr[$val['code']] ?? 0) + 1;
         }
         var_dump($arr);

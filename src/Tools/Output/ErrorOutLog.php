@@ -3,10 +3,11 @@
 namespace Dleno\CommonCore\Tools\Output;
 
 use Dleno\DingTalk\Robot;
-use Hyperf\Utils\Coroutine;
+use Hyperf\Coroutine\Coroutine;
 use Dleno\CommonCore\Tools\Logger;
-use Dleno\CommonCore\Tools\Notice\DingDing;
 use Dleno\CommonCore\Tools\Server;
+
+use function Hyperf\Config\config;
 
 class ErrorOutLog
 {
@@ -72,17 +73,6 @@ class ErrorOutLog
                         }
                         Robot::get(self::$traceConf)
                              ->exception($throwable);
-                    } else {
-                        DingDing::send(
-                            [
-                                '运行错误'     => null,
-                                'Server'   => $server,
-                                'Trace-Id' => $traceId,
-                                'Method'   => $method,
-                                'Message'  => $message,
-                                //'Trace'  => $trace,
-                            ]
-                        );
                     }
                 }
             }

@@ -20,10 +20,10 @@ use Throwable;
 class HttpExceptionHandler extends \Hyperf\HttpServer\Exception\Handler\HttpExceptionHandler
 {
     /**
-     * @WsExceptionHandlerLog()
      * Handle the exception, and return the specified result.
      * @param HttpException $throwable
      */
+    #[WsExceptionHandlerLog]
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         $this->stopPropagation();

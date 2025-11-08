@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Core\Route;
 
+use Hyperf\Di\Exception\ConflictAnnotationException;
 use Hyperf\Di\ReflectionManager;
 use Hyperf\HttpServer\Annotation\AutoController;
 use Hyperf\HttpServer\Annotation\Controller;
@@ -14,16 +15,19 @@ use Hyperf\HttpServer\Annotation\PatchMapping;
 use Hyperf\HttpServer\Annotation\PostMapping;
 use Hyperf\HttpServer\Annotation\PutMapping;
 use Hyperf\HttpServer\Annotation\RequestMapping;
+use Hyperf\HttpServer\PriorityMiddleware;
 use Hyperf\HttpServer\Router\DispatcherFactory;
-use Hyperf\Utils\Arr;
-use Hyperf\Utils\Str;
+use Hyperf\Collection\Arr;
+use Hyperf\Stringable\Str;
 use ReflectionMethod;
+
+use function Hyperf\Config\config;
 
 class RouterDispatcherFactory extends DispatcherFactory
 {
     protected function formatRoutePath($path)
     {
-        $routePerfix = trim(config('app.route_perfix', ''), '/');
+        $routePerfix = trim(config('app.route_prefix', ''), '/');
         if ($routePerfix) {
             $path = '/' . $routePerfix . $path;
         }
@@ -134,23 +138,26 @@ class RouterDispatcherFactory extends DispatcherFactory
             }
 
             // Rewrite by annotation @Middleware for Controller.
-            $options['middleware'] = array_unique($methodMiddlewares);
+            $options['middleware'] = $methodMiddlewares;
 
             foreach ($mappingAnnotations as $mappingAnnotation) {
                 /** @var Mapping $mapping */
                 if ($mapping = $values[$mappingAnnotation] ?? null) {
-                    if (!isset($mapping->path) || !isset($mapping->methods) || !isset($mapping->options)) {
+                    if (! isset($mapping->methods) || ! isset($mapping->options)) {
                         continue;
                     }
                     $methodOptions = Arr::merge($options, $mapping->options);
                     // Rewrite by annotation @Middleware for method.
                     $methodOptions['middleware'] = $options['middleware'];
-                    $path                        = $mapping->path;
 
-                    if ($path === '') {
+                    if (! isset($mapping->path)) {
+                        $path = $prefix . '/' . Str::snake($methodName);
+                    } elseif ($mapping->path === '') {
                         $path = $prefix;
-                    } elseif ($path[0] !== '/') {
-                        $path = $prefix . '/' . $path;
+                    } elseif ($mapping->path[0] !== '/') {
+                        $path = rtrim($prefix, '/') . '/' . $mapping->path;
+                    } else {
+                        $path = $mapping->path;
                     }
                     $path = $this->formatRoutePath($path);
 

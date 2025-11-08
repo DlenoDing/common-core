@@ -3,7 +3,8 @@
 namespace Dleno\CommonCore\Logger;
 
 use Monolog\Handler\RotatingFileHandler;
-use Monolog\Logger;
+use Monolog\Level;
+use Monolog\LogRecord;
 
 /**
  * LogFileHandler
@@ -18,17 +19,19 @@ class LogFileHandler extends RotatingFileHandler
      * @param array $record
      * @return bool
      */
-    public function isHandling(array $record): bool
+    public function isHandling(LogRecord $record): bool
     {
-        switch ($record['level']) {
-            case Logger::DEBUG:
-                return $record['level'] == $this->level;
+        $thisLevel   = $this->level->value;
+        $recordLevel = $record->level->value;
+        switch ($recordLevel) {
+            case Level::Debug:
+                return $recordLevel == $thisLevel;
                 break;
-            case $record['level'] == Logger::ERROR || $record['level'] == Logger::CRITICAL || $record['level'] == Logger::ALERT || $record['level'] == Logger::EMERGENCY:
-                return Logger::ERROR <= $this->level && Logger::EMERGENCY >= $this->level;
+            case $recordLevel == Level::Error || $recordLevel == Level::Critical || $recordLevel == Level::Alert || $recordLevel == Level::Emergency:
+                return Level::Error <= $thisLevel && Level::Emergency >= $thisLevel;
                 break;
             default:
-                return Logger::INFO <= $this->level && Logger::WARNING >= $this->level;
+                return Level::Info <= $thisLevel && Level::Warning >= $thisLevel;
         }
     }
 }

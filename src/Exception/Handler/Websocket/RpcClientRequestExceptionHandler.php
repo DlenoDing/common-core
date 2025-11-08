@@ -23,11 +23,11 @@ use Throwable;
 class RpcClientRequestExceptionHandler extends ExceptionHandler
 {
     /**
-     * @WsExceptionHandlerLog()
      * Handle the exception, and return the specified result.
      * @param RequestException $throwable
      * @param ResponseInterface $response
      */
+    #[WsExceptionHandlerLog]
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         $this->stopPropagation();

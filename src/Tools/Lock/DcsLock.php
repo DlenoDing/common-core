@@ -9,6 +9,8 @@ use Hyperf\Snowflake\IdGeneratorInterface;
 use Hyperf\Context\Context;
 use Swoole\Coroutine as SwooleCo;
 
+use function Hyperf\Config\config;
+
 class DcsLock
 {
     private static $isWarning = false;

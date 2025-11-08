@@ -5,14 +5,16 @@ namespace Dleno\CommonCore\Tools\Output;
 use Dleno\CommonCore\Tools\Client;
 use Hyperf\Di\Aop\ProceedingJoinPoint;
 use Hyperf\HttpServer\Response;
-use Hyperf\Utils\ApplicationContext;
+use Hyperf\Context\ApplicationContext;
 use Hyperf\Context\Context;
-use Hyperf\Utils\Coroutine;
+use Hyperf\Coroutine\Coroutine;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Tools\Server;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+
+use function Hyperf\Config\config;
 
 class ApiOutLog
 {

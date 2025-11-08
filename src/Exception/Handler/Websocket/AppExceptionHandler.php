@@ -20,11 +20,11 @@ use Throwable;
 class AppExceptionHandler extends ExceptionHandler
 {
     /**
-     * @WsExceptionHandlerLog()
      * Handle the exception, and return the specified result.
      * @param AppException $throwable
      * @param ResponseInterface $response
      */
+    #[WsExceptionHandlerLog]
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         $this->stopPropagation();

@@ -2,7 +2,7 @@
 
 namespace Dleno\CommonCore\Tools\Http;
 
-use Hyperf\Utils\Coroutine;
+use Hyperf\Coroutine\Coroutine;
 
 class HttpClient
 {

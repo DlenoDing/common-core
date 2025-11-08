@@ -4,6 +4,8 @@ namespace Dleno\CommonCore\Tools;
 
 use Dleno\CommonCore\Conf\RpcContextConf;
 
+use function Hyperf\Config\config;
+
 class Client
 {
     /**

@@ -6,6 +6,8 @@ use Hyperf\WebSocketServer\Sender;
 use Dleno\CommonCore\PipeMessage\Websocket\FdCheckPipeMessage;
 use Swoole\Server;
 
+use function Hyperf\Config\config;
+
 class CheckFd
 {
     const MAX_SLEEP = 50;//休眠最大次数

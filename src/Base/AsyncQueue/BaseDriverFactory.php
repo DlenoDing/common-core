@@ -7,6 +7,8 @@ use Hyperf\AsyncQueue\Driver\DriverFactory;
 use Hyperf\AsyncQueue\Driver\DriverInterface;
 use Hyperf\AsyncQueue\Exception\InvalidDriverException;
 
+use function Hyperf\Support\make;
+
 class BaseDriverFactory extends DriverFactory
 {
     /**

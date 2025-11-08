@@ -39,7 +39,7 @@ class OnPipeMessageListener implements ListenerInterface
      * Handle the Event when the event is triggered, all listeners will
      * complete before the event is returned to the EventDispatcher.
      */
-    public function process(object $event)
+    public function process(object $event): void
     {
         if (property_exists($event, 'data')) {
             if ($event->data instanceof FdCheckPipeMessage) {
@@ -59,7 +59,7 @@ class OnPipeMessageListener implements ListenerInterface
                         }
                     } catch (\Exception $e) {
                         //错误时忽略
-                        var_dump($e->getMessage());
+                        $this->logger->warning($e->getMessage());
                     }
                 } elseif ($event->data->type == FdCheckPipeMessage::TYPE_CHECK_RETURN) {
                     try {

@@ -19,40 +19,37 @@ use PhpAmqpLib\Wire\AMQPTable;
  */
 class BaseConsumer extends ConsumerMessage
 {
-    /**
-     * @var string
-     */
-    protected $poolName = 'default';//设置使用的连接池，可在__construct里动态改变
+    protected string $poolName = 'default';//设置使用的连接池，可在__construct里动态改变
 
     /**
-     * @var string 交换机类型
+     * 交换机类型
      */
-    protected $type = Type::DIRECT;
+    protected string|Type $type = Type::DIRECT;
 
     /**
-     * @var string 交换机key(注解优先，需要动态设置时，则不能要注解)
+     * 交换机key(注解优先，需要动态设置时，则不能要注解)
      */
-    protected $exchange = '';
+    protected string $exchange = '';
 
     /**
-     * @var string 路由key(注解优先，需要动态设置时，则不能要注解)
+     * 路由key(注解优先，需要动态设置时，则不能要注解)
      */
-    protected $routingKey = '';
+    protected array|string $routingKey = '';
 
     /**
-     * @var string 队列key(注解优先，需要动态设置时，则不能要注解)
+     * 队列key(注解优先，需要动态设置时，则不能要注解)
      */
-    protected $queue = '';
+    protected ?string $queue = '';
 
     /**
      * @var bool
      */
-    protected $requeue = true;
+    protected bool $requeue = true;
 
     /**
-     * @var int 最大消费数量（满足后重启进程）
+     * 最大消费数量（满足后重启进程）
      */
-    protected $maxConsumption = 0;
+    protected int $maxConsumption = 0;
 
     /**
      * @var string 死信交换机
@@ -129,11 +126,5 @@ class BaseConsumer extends ConsumerMessage
         } else {
             return parent::getExchangeBuilder();
         }
-    }
-
-    public function setPoolName($poolName): self
-    {
-        $this->poolName = $poolName;
-        return $this;
     }
 }

@@ -17,8 +17,10 @@ use Dleno\CommonCore\Tools\Server;
 use Hyperf\Database\Events\QueryExecuted;
 use Hyperf\Event\Annotation\Listener;
 use Hyperf\Event\Contract\ListenerInterface;
-use Hyperf\Utils\Arr;
-use Hyperf\Utils\Str;
+use Hyperf\Collection\Arr;
+use Hyperf\Stringable\Str;
+
+use function Hyperf\Config\config;
 
 /**
  * @Listener
@@ -35,7 +37,7 @@ class DbQueryExecutedListener implements ListenerInterface
     /**
      * @param QueryExecuted $event
      */
-    public function process(object $event)
+    public function process(object $event): void
     {
         if ($event instanceof QueryExecuted) {
             $sql = $event->sql;

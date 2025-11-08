@@ -14,6 +14,8 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
+use function Hyperf\Config\config;
+
 /**
  * 初始化处理中间件
  * Class InitMiddleware

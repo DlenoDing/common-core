@@ -12,7 +12,7 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Model;
 
 use Hyperf\Database\Commands\Ast\ModelUpdateVisitor as Visitor;
-use Hyperf\Utils\Str;
+use Hyperf\Stringable\Str;
 
 class ModelUpdateVisitor extends Visitor
 {
@@ -51,7 +51,7 @@ class ModelUpdateVisitor extends Visitor
                 return 'int';
             case 'date':
             case 'datetime':
-                return '\Carbon\Carbon';
+                return $this->uses['Carbon\Carbon'] ?? '\Carbon\Carbon';
             case 'json':
                 return 'array';
         }

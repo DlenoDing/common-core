@@ -9,6 +9,9 @@ use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Conf\RpcContextConf;
 use Psr\Http\Message\ServerRequestInterface;
 
+use function Hyperf\Config\config;
+use function Hyperf\Support\env;
+
 class Server
 {
     /**
@@ -183,5 +186,6 @@ class Server
             }
             return false;
         }
+        return true;
     }
 }

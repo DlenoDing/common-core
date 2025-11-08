@@ -22,9 +22,9 @@ class ValidationExceptionHandler extends \Hyperf\Validation\ValidationExceptionH
 {
     /**
      * Handle the exception, and return the specified result.
-     * @ExceptionHandlerLog()
      * @param ValidationException $throwable
      */
+    #[ExceptionHandlerLog]
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         $this->stopPropagation();

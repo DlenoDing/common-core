@@ -5,6 +5,8 @@ namespace Dleno\CommonCore\Db;
 
 use Dleno\CommonCore\Tools\Arrays\ArrayTool;
 
+use function Hyperf\Support\env;
+
 /**
  * Redis数据库配置
  * Class RpcClient

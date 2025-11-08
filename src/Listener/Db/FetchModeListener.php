@@ -21,7 +21,7 @@ class FetchModeListener implements ListenerInterface
         ];
     }
 
-    public function process(object $event)
+    public function process(object $event): void
     {
         if ($event instanceof StatementPrepared) {
             //Db::table('sss')->get()统一返回数组格式

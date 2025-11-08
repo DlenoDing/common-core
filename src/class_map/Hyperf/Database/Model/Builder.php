@@ -14,34 +14,59 @@ namespace Hyperf\Database\Model;
 
 use BadMethodCallException;
 use Closure;
+use Generator;
 use Dleno\CommonCore\Model\BaseModel;
+use Dleno\CommonCore\Conf\RpcContextConf;
+use Hyperf\Collection\Arr;
+use Hyperf\Collection\Collection;
+use Hyperf\Contract\Arrayable;
 use Hyperf\Contract\LengthAwarePaginatorInterface;
+use Hyperf\Contract\PaginatorInterface;
 use Hyperf\Database\Concerns\BuildsQueries;
+use Hyperf\Database\Exception\MultipleRecordsFoundException;
+use Hyperf\Database\Exception\RecordsNotFoundException;
+use Hyperf\Database\Exception\UniqueConstraintViolationException;
+use Hyperf\Database\Model\Collection as ModelCollection;
 use Hyperf\Database\Model\Relations\Relation;
 use Hyperf\Database\Query\Builder as QueryBuilder;
-use Hyperf\Paginator\Paginator;
-use Hyperf\Utils\Arr;
-use Hyperf\Utils\Contracts\Arrayable;
-use Hyperf\Utils\Str;
-use Hyperf\Utils\Traits\ForwardsCalls;
 use Hyperf\Database\Query\Expression;
 use Hyperf\Database\Query\Grammars\Grammar;
 use Hyperf\DbConnection\Db;
-use Dleno\CommonCore\Conf\RpcContextConf;
+use Hyperf\Paginator\Contract\CursorPaginator;
+use Hyperf\Paginator\Cursor;
+use Hyperf\Paginator\Paginator;
+use Hyperf\Stringable\Str;
+use Hyperf\Support\Traits\ForwardsCalls;
+use InvalidArgumentException;
+use ReflectionClass;
+use ReflectionMethod;
+use RuntimeException;
+
+use function Hyperf\Collection\collect;
+use function Hyperf\Tappable\tap;
 
 /**
+ * @template TModel of Model
+ *
+ * @method bool chunk(int $count, callable(ModelCollection<int, TModel>, int): (bool|void) $callback)
+ * @method bool chunkByIdDesc(int $count, callable(ModelCollection<int, TModel>, int): (bool|void) $callback, null|string $column = null, null|string $alias = null)
+ *
  * @mixin \Hyperf\Database\Query\Builder
  */
 class Builder
 {
-    use BuildsQueries;
+    /** @use BuildsQueries<TModel> */
+    use BuildsQueries {
+        BuildsQueries::sole as baseSole;
+    }
+
     use ForwardsCalls;
     use Concerns\QueriesRelationships;
 
     /**
      * The base query builder instance.
      *
-     * @var \Hyperf\Database\Query\Builder
+     * @var QueryBuilder
      */
     protected $query;
 
@@ -54,64 +79,42 @@ class Builder
 
     /**
      * The relationships that should be eager loaded.
-     *
-     * @var array
      */
     protected $eagerLoad = [];
 
     /**
      * All of the globally registered builder macros.
-     *
-     * @var array
      */
     protected static $macros = [];
 
     /**
      * All of the locally registered builder macros.
-     *
-     * @var array
      */
     protected $localMacros = [];
 
     /**
      * A replacement for the typical delete function.
      *
-     * @var \Closure
+     * @var Closure
      */
     protected $onDelete;
 
     /**
      * The methods that should be returned from query builder.
-     *
-     * @var array
      */
     protected $passthru = [
-        'insert',
-        'insertGetId',
-        'getBindings',
-        'toSql',
-        'exists',
-        'doesntExist',
-        'count',
-        'min',
-        'max',
-        'avg',
-        'average',
-        'sum',
-        'getConnection',
+        'insert', 'insertGetId', 'getBindings', 'toSql', 'toRawSql', 'insertOrIgnore',
+        'exists', 'doesntExist', 'count', 'min', 'max', 'avg', 'average', 'sum', 'getConnection',
+        'upsert', 'updateOrInsert', 'insertOrIgnoreUsing',
     ];
 
     /**
      * Applied global scopes.
-     *
-     * @var array
      */
     protected $scopes = [];
 
     /**
      * Removed global scopes.
-     *
-     * @var array
      */
     protected $removedScopes = [];
 
@@ -168,13 +171,17 @@ class Builder
             return;
         }
 
-        if (isset($this->localMacros[$method])) {
+        if ($method === 'mixin') {
+            return static::registerMixin($parameters[0], $parameters[1] ?? true);
+        }
+
+        if ($this->hasMacro($method)) {
             array_unshift($parameters, $this);
 
             return $this->localMacros[$method](...$parameters);
         }
 
-        if (isset(static::$macros[$method])) {
+        if (static::hasGlobalMacro($method)) {
             if (static::$macros[$method] instanceof Closure) {
                 return call_user_func_array(static::$macros[$method]->bindTo($this, static::class), $parameters);
             }
@@ -187,13 +194,10 @@ class Builder
         }
 
         if (in_array($method, $this->passthru)) {
-            return $this->toBase()
-                        ->{$method}(
-                            ...$parameters
-                        );
+            return $this->toBase()->{$method}(...$parameters);
         }
 
-        call([$this->query, $method], $parameters);
+        $this->query->{$method}(...$parameters);
 
         return $this;
     }
@@ -204,7 +208,7 @@ class Builder
      * @param string $method
      * @param array $parameters
      *
-     * @throws \BadMethodCallException
+     * @throws BadMethodCallException
      */
     public static function __callStatic($method, $parameters)
     {
@@ -214,7 +218,11 @@ class Builder
             return;
         }
 
-        if (!isset(static::$macros[$method])) {
+        if ($method === 'mixin') {
+            return static::registerMixin($parameters[0], $parameters[1] ?? true);
+        }
+
+        if (! static::hasGlobalMacro($method)) {
             static::throwBadMethodCallException($method);
         }
 
@@ -234,9 +242,19 @@ class Builder
     }
 
     /**
+     * Clone the Model query builder.
+     *
+     * @return static
+     */
+    public function clone()
+    {
+        return clone $this;
+    }
+
+    /**
      * Create and return an un-saved model instance.
      *
-     * @return \Hyperf\Database\Model\Model
+     * @return TModel
      */
     public function make(array $attributes = [])
     {
@@ -247,7 +265,7 @@ class Builder
      * Register a new global scope.
      *
      * @param string $identifier
-     * @param \Closure|\Hyperf\Database\Model\Scope $scope
+     * @param Closure|Scope $scope
      * @return $this
      */
     public function withGlobalScope($identifier, $scope)
@@ -264,12 +282,12 @@ class Builder
     /**
      * Remove a registered global scope.
      *
-     * @param \Hyperf\Database\Model\Scope|string $scope
+     * @param Scope|string $scope
      * @return $this
      */
     public function withoutGlobalScope($scope)
     {
-        if (!is_string($scope)) {
+        if (! is_string($scope)) {
             $scope = get_class($scope);
         }
 
@@ -285,9 +303,9 @@ class Builder
      *
      * @return $this
      */
-    public function withoutGlobalScopes(array $scopes = null)
+    public function withoutGlobalScopes(?array $scopes = null)
     {
-        if (!is_array($scopes)) {
+        if (! is_array($scopes)) {
             $scopes = array_keys($this->scopes);
         }
 
@@ -343,9 +361,21 @@ class Builder
     }
 
     /**
+     * Exclude the given models from the query results.
+     */
+    public function except(iterable|Model $models): static
+    {
+        return $this->whereKeyNot(
+            $models instanceof Model
+                ? $models->getKey()
+                : ModelCollection::wrap($models)->modelKeys()
+        );
+    }
+
+    /**
      * Add a basic where clause to the query.
      *
-     * @param array|\Closure|string $column
+     * @param array|Closure|string $column
      * @param string $boolean
      * @param null|mixed $operator
      * @param null|mixed $value
@@ -367,10 +397,10 @@ class Builder
     /**
      * Add an "or where" clause to the query.
      *
-     * @param array|\Closure|string $column
+     * @param array|Closure|string $column
      * @param null|mixed $operator
      * @param null|mixed $value
-     * @return \Hyperf\Database\Model\Builder|static
+     * @return $this
      */
     public function orWhere($column, $operator = null, $value = null)
     {
@@ -420,20 +450,15 @@ class Builder
     /**
      * Create a collection of models from plain arrays.
      *
-     * @return \Hyperf\Database\Model\Collection
+     * @return ModelCollection<int, TModel>
      */
     public function hydrate(array $items)
     {
         $instance = $this->newModelInstance();
 
-        return $instance->newCollection(
-            array_map(
-                function ($item) use ($instance) {
-                    return $instance->newFromBuilder($item);
-                },
-                $items
-            )
-        );
+        return $instance->newCollection(array_map(function ($item) use ($instance) {
+            return $instance->newFromBuilder($item);
+        }, $items));
     }
 
     /**
@@ -441,22 +466,21 @@ class Builder
      *
      * @param string $query
      * @param array $bindings
-     * @return \Hyperf\Database\Model\Collection
+     * @return ModelCollection<int, TModel>
      */
     public function fromQuery($query, $bindings = [])
     {
         return $this->hydrate(
-            $this->query->getConnection()
-                        ->select($query, $bindings)
+            $this->query->getConnection()->select($query, $bindings)
         );
     }
 
     /**
      * Find a model by its primary key.
      *
+     * @param mixed $id
      * @param array $columns
-     * @param array|int|string $id
-     * @return null|\Hyperf\Database\Model\Collection|\Hyperf\Database\Model\Model|static|static[]
+     * @return ($id is array ? ModelCollection<int, TModel> : null|TModel)
      */
     public function find($id, $columns = ['*'])
     {
@@ -464,8 +488,7 @@ class Builder
             return $this->findMany($id, $columns);
         }
 
-        return $this->whereKey($id)
-                    ->first($columns);
+        return $this->whereKey($id)->first($columns);
     }
 
     /**
@@ -473,7 +496,7 @@ class Builder
      *
      * @param array|Arrayable $ids
      * @param array $columns
-     * @return \Hyperf\Database\Model\Collection
+     * @return ModelCollection<int, TModel>
      */
     public function findMany($ids, $columns = ['*'])
     {
@@ -481,8 +504,7 @@ class Builder
             return $this->model->newCollection();
         }
 
-        return $this->whereKey($ids)
-                    ->get($columns);
+        return $this->whereKey($ids)->get($columns);
     }
 
     /**
@@ -490,8 +512,8 @@ class Builder
      *
      * @param array $columns
      * @param mixed $id
-     * @return \Hyperf\Database\Model\Collection|\Hyperf\Database\Model\Model|static|static[]
-     * @throws \Hyperf\Database\Model\ModelNotFoundException
+     * @return ($id is array ? ModelCollection<int, TModel> : TModel)
+     * @throws ModelNotFoundException
      */
     public function findOrFail($id, $columns = ['*'])
     {
@@ -501,7 +523,7 @@ class Builder
             if (count($result) === count(array_unique($id))) {
                 return $result;
             }
-        } elseif (!is_null($result)) {
+        } elseif (! is_null($result)) {
             return $result;
         }
 
@@ -512,15 +534,39 @@ class Builder
     }
 
     /**
+     * Find a model by its primary key or call a callback.
+     *
+     * @template TValue
+     *
+     * @param (Closure(): TValue)|list<string>|string $columns
+     * @param null|(Closure(): TValue) $callback
+     * @return ($id is (array|Arrayable<array-key, mixed>) ? ModelCollection<int, TModel> : TModel|TValue)
+     */
+    public function findOr(mixed $id, array|Closure|string $columns = ['*'], ?Closure $callback = null): mixed
+    {
+        if ($columns instanceof Closure) {
+            $callback = $columns;
+
+            $columns = ['*'];
+        }
+
+        if (! is_null($model = $this->find($id, $columns))) {
+            return $model;
+        }
+
+        return $callback();
+    }
+
+    /**
      * Find a model by its primary key or return fresh model instance.
      *
      * @param array $columns
      * @param mixed $id
-     * @return \Hyperf\Database\Model\Model|static
+     * @return ($id is array ? ModelCollection<int, TModel> : TModel)
      */
     public function findOrNew($id, $columns = ['*'])
     {
-        if (!is_null($model = $this->find($id, $columns))) {
+        if (! is_null($model = $this->find($id, $columns))) {
             return $model;
         }
 
@@ -530,14 +576,11 @@ class Builder
     /**
      * Get the first record matching the attributes or instantiate it.
      *
-     * @return \Hyperf\Database\Model\Model|static
+     * @return TModel
      */
     public function firstOrNew(array $attributes, array $values = [])
     {
-        if (!is_null(
-            $instance = $this->where($attributes)
-                             ->first()
-        )) {
+        if (! is_null($instance = $this->where($attributes)->first())) {
             return $instance;
         }
 
@@ -545,53 +588,67 @@ class Builder
     }
 
     /**
-     * Get the first record matching the attributes or create it.
+     * Get the first record matching the attributes. If the record is not found, create it.
      *
-     * @return \Hyperf\Database\Model\Model|static
+     * @return TModel
      */
     public function firstOrCreate(array $attributes, array $values = [])
     {
-        if (!is_null(
-            $instance = $this->where($attributes)
-                             ->first()
-        )) {
+        if (! is_null($instance = $this->where($attributes)->first())) {
             return $instance;
         }
 
-        return tap(
-            $this->newModelInstance($attributes + $values),
-            function ($instance) {
-                $instance->save();
-            }
-        );
+        return $this->createOrFirst($attributes, $values);
+    }
+
+    /**
+     * Attempt to create the record. If a unique constraint violation occurs, attempt to find the matching record.
+     *
+     * @return TModel
+     */
+    public function createOrFirst(array $attributes = [], array $values = [])
+    {
+        try {
+            return $this->create(array_merge($attributes, $values));
+        } catch (UniqueConstraintViolationException $e) {
+            return $this->where($attributes)->first() ?? throw $e;
+        }
     }
 
     /**
      * Create or update a record matching the attributes, and fill it with values.
      *
-     * @return \Hyperf\Database\Model\Model|static
+     * @return TModel
      */
     public function updateOrCreate(array $attributes, array $values = [])
     {
-        return tap(
-            $this->firstOrNew($attributes),
-            function ($instance) use ($values) {
-                $instance->fill($values)
-                         ->save();
+        return tap($this->firstOrNew($attributes), function ($instance) use ($values) {
+            $instance->fill($values)->save();
+        });
+    }
+
+    /**
+     * Create a record matching the attributes, or increment the existing record.
+     */
+    public function incrementOrCreate(array $attributes, string $column = 'count', float|int $default = 1, float|int $step = 1, array $extra = []): Model
+    {
+        return tap($this->firstOrCreate($attributes, [$column => $default]), function ($instance) use ($column, $step, $extra) {
+            if (! $instance->wasRecentlyCreated) {
+                $instance->increment($column, $step, $extra);
             }
-        );
+        });
     }
 
     /**
      * Execute the query and get the first result or throw an exception.
      *
      * @param array $columns
-     * @return \Hyperf\Database\Model\Model|static
-     * @throws \Hyperf\Database\Model\ModelNotFoundException
+     * @return TModel
+     * @throws ModelNotFoundException
      */
     public function firstOrFail($columns = ['*'])
     {
-        if (!is_null($model = $this->first($columns))) {
+        if (! is_null($model = $this->first($columns))) {
             return $model;
         }
 
@@ -601,10 +658,12 @@ class Builder
     /**
      * Execute the query and get the first result or call a callback.
      *
-     * @param array|\Closure $columns
-     * @return \Hyperf\Database\Model\Model|mixed|static
+     * @template TValue
+     * @param array<string>|(Closure(): TValue) $columns
+     * @param null|(Closure(): TValue) $callback
+     * @return ($columns is (Closure(): TValue) ? TModel|TValue : ($callback is null ? null|TModel : TModel|TValue))
      */
-    public function firstOr($columns = ['*'], Closure $callback = null)
+    public function firstOr($columns = ['*'], ?Closure $callback = null)
     {
         if ($columns instanceof Closure) {
             $callback = $columns;
@@ -612,7 +671,7 @@ class Builder
             $columns = ['*'];
         }
 
-        if (!is_null($model = $this->first($columns))) {
+        if (! is_null($model = $this->first($columns))) {
             return $model;
         }
 
@@ -627,15 +686,26 @@ class Builder
     public function value($column)
     {
         if ($result = $this->first([$column])) {
-            return $result->{$column};
+            return $result->{Str::afterLast($column, '.')};
         }
+    }
+
+    /**
+     * Get a single column's value from the first result of the query or throw an exception.
+     * @throws ModelNotFoundException<Model>
+     */
+    public function valueOrFail(Expression|string $column): mixed
+    {
+        $column = $column instanceof Expression ? $column->getValue() : $column;
+
+        return $this->firstOrFail([$column])->{Str::afterLast($column, '.')};
     }
 
     /**
      * Execute the query as a "select" statement.
      *
      * @param array $columns
-     * @return \Hyperf\Database\Model\Collection|static[]
+     * @return ModelCollection<int, TModel>
      */
     public function get($columns = ['*'])
     {
@@ -648,29 +718,27 @@ class Builder
             $models = $builder->eagerLoadRelations($models);
         }
 
-        return $builder->getModel()
-                       ->newCollection($models);
+        return $builder->getModel()->newCollection($models);
     }
 
     /**
      * Get the hydrated models without eager loading.
      *
      * @param array $columns
-     * @return \Hyperf\Database\Model\Model[]|static[]
+     * @return array<int, TModel>
      */
     public function getModels($columns = ['*'])
     {
         return $this->model->hydrate(
-            $this->query->get($columns)
-                        ->all()
-        )
-                           ->all();
+            $this->query->get($columns)->all()
+        )->all();
     }
 
     /**
      * Eager load the relationships for the models.
      *
-     * @return array
+     * @param array<int, TModel> $models
+     * @return array<int, TModel>
      */
     public function eagerLoadRelations(array $models)
     {
@@ -690,24 +758,20 @@ class Builder
      * Get the relation instance for the given relation name.
      *
      * @param string $name
-     * @return \Hyperf\Database\Model\Relations\Relation
+     * @return Relation<Model, TModel, *>
      */
     public function getRelation($name)
     {
         // We want to run a relationship query without any constrains so that we will
         // not have to remove these where clauses manually which gets really hacky
         // and error prone. We don't want constraints because we add eager ones.
-        $relation = Relation::noConstraints(
-            function () use ($name) {
-                try {
-                    return $this->getModel()
-                                ->newInstance()
-                                ->{$name}();
-                } catch (BadMethodCallException $e) {
-                    throw RelationNotFoundException::make($this->getModel(), $name);
-                }
+        $relation = Relation::noConstraints(function () use ($name) {
+            try {
+                return $this->getModel()->newInstance()->{$name}();
+            } catch (BadMethodCallException $e) {
+                throw RelationNotFoundException::make($this->getModel(), $name);
             }
-        );
+        });
 
         $nested = $this->relationsNestedUnder($name);
 
@@ -715,8 +779,7 @@ class Builder
         // the query instances so that they can be handled after this relationship
         // is loaded. In this way they will all trickle down as they are loaded.
         if (count($nested) > 0) {
-            $relation->getQuery()
-                     ->with($nested);
+            $relation->getQuery()->with($nested);
         }
 
         return $relation;
@@ -725,7 +788,7 @@ class Builder
     /**
      * Get a generator for the given query.
      *
-     * @return \Generator
+     * @return Generator<int, TModel, TModel, void>
      */
     public function cursor()
     {
@@ -738,14 +801,14 @@ class Builder
      * Chunk the results of a query by comparing numeric IDs.
      *
      * @param int $count
+     * @param callable(ModelCollection<int, TModel>, int): mixed $callback
      * @param null|string $column
      * @param null|string $alias
      * @return bool
      */
     public function chunkById($count, callable $callback, $column = null, $alias = null)
     {
-        $column = $column ?? $this->getModel()
-                                  ->getKeyName();
+        $column = $column ?? $this->getModel()->getKeyName();
 
         $alias = $alias ?? $column;
 
@@ -757,8 +820,7 @@ class Builder
             // We'll execute the query for the given page and get the results. If there are
             // no results we can just break and return from here. When there are results
             // we will call the callback with the current chunk of these results here.
-            $results = $clone->forPageAfterId($count, $lastId, $column)
-                             ->get();
+            $results = $clone->forPageAfterId($count, $lastId, $column)->get();
 
             $countResults = $results->count();
 
@@ -775,6 +837,10 @@ class Builder
 
             $lastId = $results->last()->{$alias};
 
+            if ($lastId === null) {
+                throw new RuntimeException("The chunkById operation was aborted because the [{$alias}] column is not present in the query result.");
+            }
+
             unset($results);
         } while ($countResults == $count);
 
@@ -786,60 +852,45 @@ class Builder
      *
      * @param string $column
      * @param null|string $key
-     * @return \Hyperf\Utils\Collection
+     * @return Collection<array-key, mixed>
      */
     public function pluck($column, $key = null)
     {
-        $results = $this->toBase()
-                        ->pluck($column, $key);
+        $results = $this->toBase()->pluck($column, $key);
 
         // If the model has a mutator for the requested column, we will spin through
         // the results and mutate the values so that the mutated version of these
         // columns are returned as you would expect from these Model models.
-        if (!$this->model->hasGetMutator($column)
-            && !$this->model->hasCast($column)
-            && !in_array($column, $this->model->getDates())) {
+        if (! $this->model->hasGetMutator($column)
+            && ! $this->model->hasCast($column)
+            && ! in_array($column, $this->model->getDates())) {
             return $results;
         }
 
-        return $results->map(
-            function ($value) use ($column) {
-                return $this->model->newFromBuilder([$column => $value])->{$column};
-            }
-        );
+        return $results->map(function ($value) use ($column) {
+            return $this->model->newFromBuilder([$column => $value])->{$column};
+        });
     }
 
     /**
      * Paginate the given query.
      *
-     * @throws \InvalidArgumentException
+     * @throws InvalidArgumentException
      */
-    public function paginate(
-        ?int $perPage = null,
-        array $columns = ['*'],
-        string $pageName = 'page',
-        ?int $page = null
-    ): LengthAwarePaginatorInterface {
+    public function paginate(?int $perPage = null, array $columns = ['*'], string $pageName = 'page', ?int $page = null): LengthAwarePaginatorInterface
+    {
         $page = $page ?: Paginator::resolveCurrentPage($pageName);
 
         $perPage = $perPage ?: $this->model->getPerPage();
 
-        $results = ($total = $this->toBase()
-                                  ->getCountForPagination())
-            ? $this->forPage($page, $perPage)
-                   ->get($columns)
+        $results = ($total = $this->toBase()->getCountForPagination())
+            ? $this->forPage($page, $perPage)->get($columns)
             : $this->model->newCollection();
 
-        return $this->paginator(
-            $results,
-            $total,
-            $perPage,
-            $page,
-            [
-                'path'     => Paginator::resolveCurrentPath(),
-                'pageName' => $pageName,
-            ]
-        );
+        return $this->paginator($results, $total, $perPage, $page, [
+            'path' => Paginator::resolveCurrentPath(),
+            'pageName' => $pageName,
+        ]);
     }
 
     /**
@@ -849,7 +900,7 @@ class Builder
      * @param array $columns
      * @param string $pageName
      * @param null|int $page
-     * @return \Hyperf\Contract\PaginatorInterface
+     * @return PaginatorInterface
      */
     public function simplePaginate($perPage = null, $columns = ['*'], $pageName = 'page', $page = null)
     {
@@ -860,48 +911,46 @@ class Builder
         // Next we will set the limit and offset for this query so that when we get the
         // results we get the proper section of results. Then, we'll create the full
         // paginator instances for these results with the given page and per page.
-        $this->skip(($page - 1) * $perPage)
-             ->take($perPage + 1);
+        $this->skip(($page - 1) * $perPage)->take($perPage + 1);
 
-        return $this->simplePaginator(
-            $this->get($columns),
-            $perPage,
-            $page,
-            [
-                'path'     => Paginator::resolveCurrentPath(),
-                'pageName' => $pageName,
-            ]
-        );
+        return $this->simplePaginator($this->get($columns), $perPage, $page, [
+            'path' => Paginator::resolveCurrentPath(),
+            'pageName' => $pageName,
+        ]);
+    }
+
+    /**
+     * Paginate the given query into a cursor paginator.
+     */
+    public function cursorPaginate(?int $perPage = null, array|string $columns = ['*'], string $cursorName = 'cursor', null|Cursor|string $cursor = null): CursorPaginator
+    {
+        $perPage = $perPage ?: $this->model->getPerPage();
+
+        return $this->paginateUsingCursor($perPage, $columns, $cursorName, $cursor);
     }
 
     /**
      * Save a new model and return the instance.
      *
-     * @return $this|\Hyperf\Database\Model\Model
+     * @return TModel
      */
     public function create(array $attributes = [])
     {
-        return tap(
-            $this->newModelInstance($attributes),
-            function ($instance) {
-                $instance->save();
-            }
-        );
+        return tap($this->newModelInstance($attributes), function ($instance) {
+            $instance->save();
+        });
     }
 
     /**
      * Save a new model and return the instance. Allow mass-assignment.
      *
-     * @return $this|\Hyperf\Database\Model\Model
+     * @return TModel
      */
     public function forceCreate(array $attributes)
     {
-        return $this->model->unguarded(
-            function () use ($attributes) {
-                return $this->newModelInstance()
-                            ->create($attributes);
-            }
-        );
+        return $this->model->unguarded(function () use ($attributes) {
+            return $this->newModelInstance()->create($attributes);
+        });
     }
 
     /**
@@ -911,8 +960,27 @@ class Builder
      */
     public function update(array $values)
     {
-        return $this->toBase()
-                    ->update($this->addUpdatedAtColumn($values));
+        return $this->toBase()->update($this->addUpdatedAtColumn($values));
+    }
+
+    /**
+     * Update the column's update timestamp.
+     */
+    public function touch(?string $column = null): false|int
+    {
+        $time = $this->model->freshTimestamp();
+
+        if ($column) {
+            return $this->toBase()->update([$column => $time]);
+        }
+
+        $column = $this->model->getUpdatedAtColumn();
+
+        if (! $this->model->usesTimestamps() || is_null($column)) {
+            return false;
+        }
+
+        return $this->toBase()->update([$column => $time]);
     }
 
     /**
@@ -924,12 +992,11 @@ class Builder
      */
     public function increment($column, $amount = 1, array $extra = [])
     {
-        return $this->toBase()
-                    ->increment(
-                        $column,
-                        $amount,
-                        $this->addUpdatedAtColumn($extra)
-                    );
+        return $this->toBase()->increment(
+            $column,
+            $amount,
+            $this->addUpdatedAtColumn($extra)
+        );
     }
 
     /**
@@ -941,12 +1008,11 @@ class Builder
      */
     public function decrement($column, $amount = 1, array $extra = [])
     {
-        return $this->toBase()
-                    ->decrement(
-                        $column,
-                        $amount,
-                        $this->addUpdatedAtColumn($extra)
-                    );
+        return $this->toBase()->decrement(
+            $column,
+            $amount,
+            $this->addUpdatedAtColumn($extra)
+        );
     }
 
     /**
@@ -959,13 +1025,11 @@ class Builder
         if (!empty($table)) {
             $this->from($table);
         }
-
         if (isset($this->onDelete)) {
             return call_user_func($this->onDelete, $this);
         }
 
-        return $this->toBase()
-                    ->delete();
+        return $this->toBase()->delete();
     }
 
     /**
@@ -1006,7 +1070,7 @@ class Builder
             // messed up when adding scopes. Then we'll return back out the builder.
             $builder = $builder->callScope(
                 [$this->model, 'scope' . ucfirst($scope)],
-                (array)$parameters
+                (array) $parameters
             );
         }
 
@@ -1016,41 +1080,56 @@ class Builder
     /**
      * Apply the scopes to the Model builder instance and return it.
      *
-     * @return \Hyperf\Database\Model\Builder|static
+     * @return Builder|static
      */
     public function applyScopes()
     {
-        if (!$this->scopes) {
+        if (! $this->scopes) {
             return $this;
         }
 
         $builder = clone $this;
 
         foreach ($this->scopes as $identifier => $scope) {
-            if (!isset($builder->scopes[$identifier])) {
+            if (! isset($builder->scopes[$identifier])) {
                 continue;
             }
 
-            $builder->callScope(
-                function (Builder $builder) use ($scope) {
-                    // If the scope is a Closure we will just go ahead and call the scope with the
-                    // builder instance. The "callScope" method will properly group the clauses
-                    // that are added to this query so "where" clauses maintain proper logic.
-                    if ($scope instanceof Closure) {
-                        $scope($builder);
-                    }
-
-                    // If the scope is a scope object, we will call the apply method on this scope
-                    // passing in the builder and the model instance. After we run all of these
-                    // scopes we will return back the builder instance to the outside caller.
-                    if ($scope instanceof Scope) {
-                        $scope->apply($builder, $this->getModel());
-                    }
+            $builder->callScope(function (Builder $builder) use ($scope) {
+                // If the scope is a Closure we will just go ahead and call the scope with the
+                // builder instance. The "callScope" method will properly group the clauses
+                // that are added to this query so "where" clauses maintain proper logic.
+                if ($scope instanceof Closure) {
+                    $scope($builder);
                 }
-            );
+
+                // If the scope is a scope object, we will call the apply method on this scope
+                // passing in the builder and the model instance. After we run all of these
+                // scopes we will return back the builder instance to the outside caller.
+                if ($scope instanceof Scope) {
+                    $scope->apply($builder, $this->getModel());
+                }
+            });
         }
 
         return $builder;
+    }
+
+    /**
+     * Execute the query and get the first result if it's the sole matching record.
+     *
+     * @return TModel
+     *
+     * @throws ModelNotFoundException<TModel>
+     * @throws MultipleRecordsFoundException
+     */
+    public function sole(array|string $columns = ['*'])
+    {
+        try {
+            return $this->baseSole($columns);
+        } catch (RecordsNotFoundException) {
+            throw (new ModelNotFoundException())->setModel($this->model::class);
+        }
     }
 
     /**
@@ -1076,12 +1155,9 @@ class Builder
      */
     public function without($relations)
     {
-        $this->eagerLoad = array_diff_key(
-            $this->eagerLoad,
-            array_flip(
-                is_string($relations) ? func_get_args() : $relations
-            )
-        );
+        $this->eagerLoad = array_diff_key($this->eagerLoad, array_flip(
+            is_string($relations) ? func_get_args() : $relations
+        ));
 
         return $this;
     }
@@ -1090,24 +1166,19 @@ class Builder
      * Create a new instance of the model being queried.
      *
      * @param array $attributes
-     * @return \Hyperf\Database\Model\Model|static
+     * @return TModel
      */
     public function newModelInstance($attributes = [])
     {
-        return $this->model->newInstance($attributes)
-                           ->setConnection(
-                               $this->query->getConnection()
-                                           ->getName()
-                           );
+        return $this->model->newInstance($attributes)->setConnection(
+            $this->query->getConnection()->getName()
+        );
     }
 
     /**
      * Apply query-time casts to the model instance.
-     *
-     * @param array $casts
-     * @return $this
      */
-    public function withCasts($casts)
+    public function withCasts(array $casts): static
     {
         $this->model->mergeCasts($casts);
 
@@ -1117,7 +1188,7 @@ class Builder
     /**
      * Get the underlying query builder instance.
      *
-     * @return \Hyperf\Database\Query\Builder
+     * @return QueryBuilder
      */
     public function getQuery()
     {
@@ -1127,7 +1198,7 @@ class Builder
     /**
      * Set the underlying query builder instance.
      *
-     * @param \Hyperf\Database\Query\Builder $query
+     * @param QueryBuilder $query
      * @return $this
      */
     public function setQuery($query)
@@ -1140,12 +1211,11 @@ class Builder
     /**
      * Get a base query builder instance.
      *
-     * @return \Hyperf\Database\Query\Builder
+     * @return QueryBuilder
      */
     public function toBase()
     {
-        return $this->applyScopes()
-                    ->getQuery();
+        return $this->applyScopes()->getQuery();
     }
 
     /**
@@ -1173,7 +1243,7 @@ class Builder
     /**
      * Get the model instance being queried.
      *
-     * @return BaseModel|static
+     * @return BaseModel|TModel
      */
     public function getModel()
     {
@@ -1183,8 +1253,9 @@ class Builder
     /**
      * Set a model instance for the model being queried.
      *
-     * @param \Hyperf\Database\Model\Model $model
-     * @return $this
+     * @template TNewModel of \Hyperf\Database\Model\Model
+     * @param TNewModel $model
+     * @return Builder<TNewModel>
      */
     public function setModel(Model $model)
     {
@@ -1207,15 +1278,387 @@ class Builder
     }
 
     /**
+     * Qualify the given columns with the model's table.
+     */
+    public function qualifyColumns(array $columns): array
+    {
+        return $this->model->qualifyColumns($columns);
+    }
+
+    /**
      * Get the given macro by name.
      *
      * @param string $name
-     * @return \Closure
+     * @return Closure
      */
     public function getMacro($name)
     {
         return Arr::get($this->localMacros, $name);
     }
+
+    /**
+     * Checks if a macro is registered.
+     *
+     * @param string $name
+     * @return bool
+     */
+    public function hasMacro($name)
+    {
+        return isset($this->localMacros[$name]);
+    }
+
+    /**
+     * Get the given global macro by name.
+     *
+     * @param string $name
+     * @return Closure
+     */
+    public static function getGlobalMacro($name)
+    {
+        return Arr::get(static::$macros, $name);
+    }
+
+    /**
+     * Checks if a global macro is registered.
+     *
+     * @param string $name
+     * @return bool
+     */
+    public static function hasGlobalMacro($name)
+    {
+        return isset(static::$macros[$name]);
+    }
+
+    /**
+     * Get the default key name of the table.
+     */
+    protected function defaultKeyName(): string
+    {
+        return $this->getModel()->getKeyName();
+    }
+
+    /**
+     * Ensure the proper order by required for cursor pagination.
+     */
+    protected function ensureOrderForCursorPagination(bool $shouldReverse = false): Collection
+    {
+        if (empty($this->query->orders) && empty($this->query->unionOrders)) {
+            $this->enforceOrderBy();
+        }
+
+        $reverseDirection = function ($order) {
+            if (! isset($order['direction'])) {
+                return $order;
+            }
+
+            $order['direction'] = $order['direction'] === 'asc' ? 'desc' : 'asc';
+
+            return $order;
+        };
+
+        if ($shouldReverse) {
+            $this->query->orders = collect($this->query->orders)->map($reverseDirection)->toArray();
+            $this->query->unionOrders = collect($this->query->unionOrders)->map($reverseDirection)->toArray();
+        }
+
+        $orders = ! empty($this->query->unionOrders) ? $this->query->unionOrders : $this->query->orders;
+
+        return collect($orders)
+            ->filter(fn ($order) => Arr::has($order, 'direction'))
+            ->values();
+    }
+
+    /**
+     * Get the Eloquent builder instances that are used in the union of the query.
+     */
+    protected function getUnionBuilders(): Collection
+    {
+        return isset($this->query->unions)
+            ? collect($this->query->unions)->pluck('query')
+            : collect();
+    }
+
+    /**
+     * Register the given mixin with the builder.
+     *
+     * @param string $mixin
+     * @param bool $replace
+     */
+    protected static function registerMixin($mixin, $replace)
+    {
+        $methods = (new ReflectionClass($mixin))->getMethods(
+            ReflectionMethod::IS_PUBLIC | ReflectionMethod::IS_PROTECTED
+        );
+
+        foreach ($methods as $method) {
+            if ($replace || ! static::hasGlobalMacro($method->name)) {
+                static::macro($method->name, $method->invoke($mixin));
+            }
+        }
+    }
+
+    /**
+     * Eagerly load the relationship on a set of models.
+     *
+     * @param string $name
+     * @return array
+     */
+    protected function eagerLoadRelation(array $models, $name, Closure $constraints)
+    {
+        // First we will "back up" the existing where conditions on the query so we can
+        // add our eager constraints. Then we will merge the wheres that were on the
+        // query back to it in order that any where conditions might be specified.
+        $relation = $this->getRelation($name);
+
+        $relation->addEagerConstraints($models);
+
+        $constraints($relation);
+
+        // Once we have the results, we just match those back up to their parent models
+        // using the relationship instance. Then we just return the finished arrays
+        // of models which have been eagerly hydrated and are readied for return.
+        return $relation->match(
+            $relation->initRelation($models, $name),
+            $relation->getEager(),
+            $name
+        );
+    }
+
+    /**
+     * Get the deeply nested relations for a given top-level relation.
+     *
+     * @param string $relation
+     * @return array
+     */
+    protected function relationsNestedUnder($relation)
+    {
+        $nested = [];
+
+        // We are basically looking for any relationships that are nested deeper than
+        // the given top-level relationship. We will just check for any relations
+        // that start with the given top relations and adds them to our arrays.
+        foreach ($this->eagerLoad as $name => $constraints) {
+            if ($this->isNestedUnder($relation, $name)) {
+                $nested[substr($name, strlen($relation . '.'))] = $constraints;
+            }
+        }
+
+        return $nested;
+    }
+
+    /**
+     * Determine if the relationship is nested.
+     *
+     * @param string $relation
+     * @param string $name
+     * @return bool
+     */
+    protected function isNestedUnder($relation, $name)
+    {
+        return Str::contains($name, '.') && Str::startsWith($name, $relation . '.');
+    }
+
+    /**
+     * Add a generic "order by" clause if the query doesn't already have one.
+     */
+    protected function enforceOrderBy()
+    {
+        if (empty($this->query->orders) && empty($this->query->unionOrders)) {
+            $this->orderBy($this->model->getQualifiedKeyName(), 'asc');
+        }
+    }
+
+    /**
+     * Add the "updated at" column to an array of values.
+     *
+     * @return array
+     */
+    protected function addUpdatedAtColumn(array $values)
+    {
+        if (! $this->model->usesTimestamps()
+            || is_null($this->model->getUpdatedAtColumn())) {
+            return $values;
+        }
+
+        $column = $this->model->getUpdatedAtColumn();
+
+        $values = array_merge(
+            [$column => $this->model->freshTimestampString()],
+            $values
+        );
+
+        $segments = preg_split('/\s+as\s+/i', $this->query->from);
+
+        $qualifiedColumn = end($segments) . '.' . $column;
+
+        $values[$qualifiedColumn] = $values[$column];
+
+        unset($values[$column]);
+
+        return $values;
+    }
+
+    /**
+     * Apply the given scope on the current builder instance.
+     *
+     * @param array $parameters
+     */
+    protected function callScope(callable $scope, $parameters = [])
+    {
+        array_unshift($parameters, $this);
+
+        $query = $this->getQuery();
+
+        // We will keep track of how many wheres are on the query before running the
+        // scope so that we can properly group the added scope constraints in the
+        // query as their own isolated nested where statement and avoid issues.
+        $originalWhereCount = is_null($query->wheres)
+            ? 0 : count($query->wheres);
+
+        $result = $scope(...array_values($parameters)) ?? $this;
+
+        if (count((array) $query->wheres) > $originalWhereCount) {
+            $this->addNewWheresWithinGroup($query, $originalWhereCount);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Nest where conditions by slicing them at the given where count.
+     *
+     * @param int $originalWhereCount
+     */
+    protected function addNewWheresWithinGroup(QueryBuilder $query, $originalWhereCount)
+    {
+        // Here, we totally remove all of the where clauses since we are going to
+        // rebuild them as nested queries by slicing the groups of wheres into
+        // their own sections. This is to prevent any confusing logic order.
+        $allWheres = $query->wheres;
+
+        $query->wheres = [];
+
+        $this->groupWhereSliceForScope(
+            $query,
+            array_slice($allWheres, 0, $originalWhereCount)
+        );
+
+        $this->groupWhereSliceForScope(
+            $query,
+            array_slice($allWheres, $originalWhereCount)
+        );
+    }
+
+    /**
+     * Slice where conditions at the given offset and add them to the query as a nested condition.
+     *
+     * @param array $whereSlice
+     */
+    protected function groupWhereSliceForScope(QueryBuilder $query, $whereSlice)
+    {
+        $whereBooleans = collect($whereSlice)->pluck('boolean');
+
+        // Here we'll check if the given subset of where clauses contains any "or"
+        // booleans and in this case create a nested where expression. That way
+        // we don't add any unnecessary nesting thus keeping the query clean.
+        if ($whereBooleans->contains('or')) {
+            $query->wheres[] = $this->createNestedWhere(
+                $whereSlice,
+                $whereBooleans->first()
+            );
+        } else {
+            $query->wheres = array_merge($query->wheres, $whereSlice);
+        }
+    }
+
+    /**
+     * Create a where array with nested where conditions.
+     *
+     * @param array $whereSlice
+     * @param string $boolean
+     * @return array
+     */
+    protected function createNestedWhere($whereSlice, $boolean = 'and')
+    {
+        $whereGroup = $this->getQuery()->forNestedWhere();
+
+        $whereGroup->wheres = $whereSlice;
+
+        return ['type' => 'Nested', 'query' => $whereGroup, 'boolean' => $boolean];
+    }
+
+    /**
+     * Parse a list of relations into individuals.
+     *
+     * @return array
+     */
+    protected function parseWithRelations(array $relations)
+    {
+        $results = [];
+
+        foreach ($relations as $name => $constraints) {
+            // If the "name" value is a numeric key, we can assume that no
+            // constraints have been specified. We'll just put an empty
+            // Closure there, so that we can treat them all the same.
+            if (is_numeric($name)) {
+                $name = $constraints;
+
+                [$name, $constraints] = Str::contains($name, ':')
+                    ? $this->createSelectWithConstraint($name)
+                    : [$name, static function () {
+                    }];
+            }
+
+            // We need to separate out any nested includes, which allows the developers
+            // to load deep relationships using "dots" without stating each level of
+            // the relationship with its own key in the array of eager-load names.
+            $results = $this->addNestedWiths($name, $results);
+
+            $results[$name] = $constraints;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Create a constraint to select the given columns for the relation.
+     *
+     * @param string $name
+     * @return array
+     */
+    protected function createSelectWithConstraint($name)
+    {
+        return [explode(':', $name)[0], static function ($query) use ($name) {
+            $query->select(explode(',', explode(':', $name)[1]));
+        }];
+    }
+
+    /**
+     * Parse the nested relationships in a relation.
+     *
+     * @param string $name
+     * @param array $results
+     * @return array
+     */
+    protected function addNestedWiths($name, $results)
+    {
+        $progress = [];
+
+        // If the relation has already been set on the result array, we will not set it
+        // again, since that would override any constraints that were already placed
+        // on the relationships. We will only set the ones that are not specified.
+        foreach (explode('.', $name) as $segment) {
+            $progress[] = $segment;
+
+            if (! isset($results[$last = implode('.', $progress)])) {
+                $results[$last] = static function () {
+                };
+            }
+        }
+
+        return $results;
+    }
+
 
     /**
      * get sql
@@ -1372,7 +1815,7 @@ class Builder
      * @param null $mode
      * @return $this
      */
-    public function whereFullText($columns, $text, $mode = null)
+    public function whereFullTextDiy($columns, $text, $mode = null)
     {
         if (is_array($columns)) {
             $columns = join(',', $columns);
@@ -1461,7 +1904,7 @@ class Builder
     private function prepareBindingsForInsertOnDuplicate(Grammar $grammar, array $values, array $value)
     {
         // Merge array of bindings
-        $bindings = Arr::flatten($values);
+        $bindings = Arr::flatten($values, INF);
         $bindings = array_merge($bindings, array_values($value));
         // Remove all of the expressions from a list of bindings.
         return array_values(
@@ -1474,272 +1917,4 @@ class Builder
         );
     }
 
-    /**
-     * Eagerly load the relationship on a set of models.
-     *
-     * @param string $name
-     * @return array
-     */
-    protected function eagerLoadRelation(array $models, $name, Closure $constraints)
-    {
-        // First we will "back up" the existing where conditions on the query so we can
-        // add our eager constraints. Then we will merge the wheres that were on the
-        // query back to it in order that any where conditions might be specified.
-        $relation = $this->getRelation($name);
-
-        $relation->addEagerConstraints($models);
-
-        $constraints($relation);
-
-        // Once we have the results, we just match those back up to their parent models
-        // using the relationship instance. Then we just return the finished arrays
-        // of models which have been eagerly hydrated and are readied for return.
-        return $relation->match(
-            $relation->initRelation($models, $name),
-            $relation->getEager(),
-            $name
-        );
-    }
-
-    /**
-     * Get the deeply nested relations for a given top-level relation.
-     *
-     * @param string $relation
-     * @return array
-     */
-    protected function relationsNestedUnder($relation)
-    {
-        $nested = [];
-
-        // We are basically looking for any relationships that are nested deeper than
-        // the given top-level relationship. We will just check for any relations
-        // that start with the given top relations and adds them to our arrays.
-        foreach ($this->eagerLoad as $name => $constraints) {
-            if ($this->isNestedUnder($relation, $name)) {
-                $nested[substr($name, strlen($relation . '.'))] = $constraints;
-            }
-        }
-
-        return $nested;
-    }
-
-    /**
-     * Determine if the relationship is nested.
-     *
-     * @param string $relation
-     * @param string $name
-     * @return bool
-     */
-    protected function isNestedUnder($relation, $name)
-    {
-        return Str::contains($name, '.') && Str::startsWith($name, $relation . '.');
-    }
-
-    /**
-     * Add a generic "order by" clause if the query doesn't already have one.
-     */
-    protected function enforceOrderBy()
-    {
-        if (empty($this->query->orders) && empty($this->query->unionOrders)) {
-            $this->orderBy($this->model->getQualifiedKeyName(), 'asc');
-        }
-    }
-
-    /**
-     * Add the "updated at" column to an array of values.
-     *
-     * @return array
-     */
-    protected function addUpdatedAtColumn(array $values)
-    {
-        if (!$this->model->usesTimestamps()
-            || is_null($this->model->getUpdatedAtColumn())) {
-            return $values;
-        }
-
-        $column = $this->model->getUpdatedAtColumn();
-
-        $values = array_merge(
-            [$column => $this->model->freshTimestampString()],
-            $values
-        );
-
-        $segments = preg_split('/\s+as\s+/i', $this->query->from);
-
-        $qualifiedColumn = end($segments) . '.' . $column;
-
-        $values[$qualifiedColumn] = $values[$column];
-
-        unset($values[$column]);
-
-        return $values;
-    }
-
-    /**
-     * Apply the given scope on the current builder instance.
-     *
-     * @param array $parameters
-     */
-    protected function callScope(callable $scope, $parameters = [])
-    {
-        array_unshift($parameters, $this);
-
-        $query = $this->getQuery();
-
-        // We will keep track of how many wheres are on the query before running the
-        // scope so that we can properly group the added scope constraints in the
-        // query as their own isolated nested where statement and avoid issues.
-        $originalWhereCount = is_null($query->wheres)
-            ? 0 : count($query->wheres);
-
-        $result = $scope(...array_values($parameters)) ?? $this;
-
-        if (count((array)$query->wheres) > $originalWhereCount) {
-            $this->addNewWheresWithinGroup($query, $originalWhereCount);
-        }
-
-        return $result;
-    }
-
-    /**
-     * Nest where conditions by slicing them at the given where count.
-     *
-     * @param int $originalWhereCount
-     */
-    protected function addNewWheresWithinGroup(QueryBuilder $query, $originalWhereCount)
-    {
-        // Here, we totally remove all of the where clauses since we are going to
-        // rebuild them as nested queries by slicing the groups of wheres into
-        // their own sections. This is to prevent any confusing logic order.
-        $allWheres = $query->wheres;
-
-        $query->wheres = [];
-
-        $this->groupWhereSliceForScope(
-            $query,
-            array_slice($allWheres, 0, $originalWhereCount)
-        );
-
-        $this->groupWhereSliceForScope(
-            $query,
-            array_slice($allWheres, $originalWhereCount)
-        );
-    }
-
-    /**
-     * Slice where conditions at the given offset and add them to the query as a nested condition.
-     *
-     * @param array $whereSlice
-     */
-    protected function groupWhereSliceForScope(QueryBuilder $query, $whereSlice)
-    {
-        $whereBooleans = collect($whereSlice)->pluck('boolean');
-
-        // Here we'll check if the given subset of where clauses contains any "or"
-        // booleans and in this case create a nested where expression. That way
-        // we don't add any unnecessary nesting thus keeping the query clean.
-        if ($whereBooleans->contains('or')) {
-            $query->wheres[] = $this->createNestedWhere(
-                $whereSlice,
-                $whereBooleans->first()
-            );
-        } else {
-            $query->wheres = array_merge($query->wheres, $whereSlice);
-        }
-    }
-
-    /**
-     * Create a where array with nested where conditions.
-     *
-     * @param array $whereSlice
-     * @param string $boolean
-     * @return array
-     */
-    protected function createNestedWhere($whereSlice, $boolean = 'and')
-    {
-        $whereGroup = $this->getQuery()
-                           ->forNestedWhere();
-
-        $whereGroup->wheres = $whereSlice;
-
-        return ['type' => 'Nested', 'query' => $whereGroup, 'boolean' => $boolean];
-    }
-
-    /**
-     * Parse a list of relations into individuals.
-     *
-     * @return array
-     */
-    protected function parseWithRelations(array $relations)
-    {
-        $results = [];
-
-        foreach ($relations as $name => $constraints) {
-            // If the "name" value is a numeric key, we can assume that no
-            // constraints have been specified. We'll just put an empty
-            // Closure there, so that we can treat them all the same.
-            if (is_numeric($name)) {
-                $name = $constraints;
-
-                [$name, $constraints] = Str::contains($name, ':')
-                    ? $this->createSelectWithConstraint($name)
-                    : [
-                        $name,
-                        static function () {
-                        }
-                    ];
-            }
-
-            // We need to separate out any nested includes, which allows the developers
-            // to load deep relationships using "dots" without stating each level of
-            // the relationship with its own key in the array of eager-load names.
-            $results = $this->addNestedWiths($name, $results);
-
-            $results[$name] = $constraints;
-        }
-
-        return $results;
-    }
-
-    /**
-     * Create a constraint to select the given columns for the relation.
-     *
-     * @param string $name
-     * @return array
-     */
-    protected function createSelectWithConstraint($name)
-    {
-        return [
-            explode(':', $name)[0],
-            static function ($query) use ($name) {
-                $query->select(explode(',', explode(':', $name)[1]));
-            }
-        ];
-    }
-
-    /**
-     * Parse the nested relationships in a relation.
-     *
-     * @param string $name
-     * @param array $results
-     * @return array
-     */
-    protected function addNestedWiths($name, $results)
-    {
-        $progress = [];
-
-        // If the relation has already been set on the result array, we will not set it
-        // again, since that would override any constraints that were already placed
-        // on the relationships. We will only set the ones that are not specified.
-        foreach (explode('.', $name) as $segment) {
-            $progress[] = $segment;
-
-            if (!isset($results[$last = implode('.', $progress)])) {
-                $results[$last] = static function () {
-                };
-            }
-        }
-
-        return $results;
-    }
 }

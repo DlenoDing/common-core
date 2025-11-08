@@ -19,7 +19,7 @@ abstract class BaseJob extends Job
      *
      * @var int
      */
-    protected $maxAttempts = 5;
+    protected int $maxAttempts = 5;
 
     public function getQueue()
     {

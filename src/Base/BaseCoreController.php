@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Base;
 
 use Hyperf\Di\Annotation\Inject;
-use Hyperf\Utils\ApplicationContext;
+use Hyperf\Context\ApplicationContext;
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\HttpServer\Contract\ResponseInterface;
 use Dleno\CommonCore\Conf\RcodeConf;

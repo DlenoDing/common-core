@@ -22,11 +22,11 @@ use Throwable;
 class ServerExceptionHandler extends ExceptionHandler
 {
     /**
-     * @ExceptionHandlerLog()
      * @param ServerException $throwable
      * @param ResponseInterface $response
      * @return mixed
      */
+    #[ExceptionHandlerLog]
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         $this->stopPropagation();

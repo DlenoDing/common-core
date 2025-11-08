@@ -2,12 +2,10 @@
 
 namespace Dleno\CommonCore\Annotation;
 
+use Attribute;
 use Hyperf\Di\Annotation\AbstractAnnotation;
 
-/**
- * @Annotation
- * @Target("METHOD")
- */
+#[Attribute(Attribute::TARGET_METHOD)]
 class WsExceptionHandlerLog extends AbstractAnnotation
 {
     // some code

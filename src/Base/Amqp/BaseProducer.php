@@ -6,6 +6,7 @@ namespace Dleno\CommonCore\Base\Amqp;
 
 use Hyperf\Amqp\Builder\ExchangeBuilder;
 use Hyperf\Amqp\Message\ProducerMessage;
+use Hyperf\Amqp\Message\Type;
 use PhpAmqpLib\Wire\AMQPTable;
 
 /**
@@ -15,25 +16,13 @@ use PhpAmqpLib\Wire\AMQPTable;
  */
 class BaseProducer extends ProducerMessage
 {
-    /**
-     * @var string
-     */
-    protected $poolName = 'default';//设置使用的连接池，可在__construct里动态改变
+    protected string $poolName = 'default';//设置使用的连接池，可在__construct里动态改变
 
-    /**
-     * @var string
-     */
-    protected $exchange = '';//交换机key(注解优先，需要动态设置时，则不能要注解)
+    protected string $exchange = '';//交换机key(注解优先，需要动态设置时，则不能要注解)
 
-    /**
-     * @var string
-     */
-    protected $routingKey = '';//路由key(注解优先，需要动态设置时，则不能要注解)
+    protected array|string $routingKey = '';//路由key(注解优先，需要动态设置时，则不能要注解)
 
-    /**
-     * @var string
-     */
-    protected $type = \Hyperf\Amqp\Message\Type::DIRECT;
+    protected string|Type $type = Type::DIRECT;
 
     /**
      * 是否延迟消息交换机(生产者消费者要对应)
@@ -70,11 +59,5 @@ class BaseProducer extends ProducerMessage
         } else {
             return parent::getExchangeBuilder();
         }
-    }
-
-    public function setPoolName($poolName): self
-    {
-        $this->poolName = $poolName;
-        return $this;
     }
 }

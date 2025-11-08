@@ -2,12 +2,10 @@
 
 namespace Dleno\CommonCore\Annotation;
 
+use Attribute;
 use Hyperf\Di\Annotation\AbstractAnnotation;
 
-/**
- * @Annotation
- * @Target("CLASS")
- */
+#[Attribute(Attribute::TARGET_METHOD)]
 class WsController extends AbstractAnnotation
 {
     // some code
