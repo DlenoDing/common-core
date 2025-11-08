@@ -39,8 +39,8 @@ class InitMiddleware implements MiddlewareInterface
         }
         //-------Header信息设置--------
         $allowHeaders = config('app.ac_allow_headers') ?? [
-                "Content-Type",//请求内容类型
-            ];
+            "Content-Type",//请求内容类型
+        ];
         $allowMethods = config('app.ac_allow_methods') ?? ['POST', 'GET', 'HEAD'];
         $response     = $response
             ->withHeader('Server', config('app_name', 'MyServer'))
@@ -84,10 +84,10 @@ class InitMiddleware implements MiddlewareInterface
         rpc_context_set(RpcContextConf::CLIENT_DEVICE, Client::getDevice());//客户端设备号
 
         if (get_header_val('Client-Version', 0)) {
-            rpc_context_set(RpcContextConf::CLIENT_VERSION, (int)get_header_val('Client-Version', 0));//客户端插件版本
+            rpc_context_set(RpcContextConf::CLIENT_VERSION, (int)get_header_val('Client-Version', '0'));//客户端插件版本
         }
         if (get_header_val('Client-ManagerId', 0)) {
-            rpc_context_set(RpcContextConf::MANAGER_ID, (int)get_header_val('Client-ManagerId', 0));//管理员ID
+            rpc_context_set(RpcContextConf::MANAGER_ID, (int)get_header_val('Client-ManagerId', '0'));//管理员ID
         }
         //处理参数
         $this->initRequest();

@@ -21,17 +21,18 @@ class LogFileHandler extends RotatingFileHandler
      */
     public function isHandling(LogRecord $record): bool
     {
-        $thisLevel   = $this->level->value;
+        $thisLevel = $this->level->value;
         $recordLevel = $record->level->value;
-        switch ($recordLevel) {
-            case Level::Debug:
-                return $recordLevel == $thisLevel;
-                break;
-            case $recordLevel == Level::Error || $recordLevel == Level::Critical || $recordLevel == Level::Alert || $recordLevel == Level::Emergency:
-                return Level::Error <= $thisLevel && Level::Emergency >= $thisLevel;
-                break;
-            default:
-                return Level::Info <= $thisLevel && Level::Warning >= $thisLevel;
+        var_dump($thisLevel, $recordLevel);
+        if ($recordLevel == Level::Debug->value) {
+            return Level::Debug->value == $thisLevel;
+        } elseif (in_array(
+            $recordLevel,
+            [Level::Error->value, Level::Critical->value, Level::Alert->value, Level::Emergency->value]
+        )) {
+            return Level::Error->value <= $thisLevel && Level::Emergency->value >= $thisLevel;
+        } else {
+            return Level::Info->value <= $thisLevel && Level::Warning->value >= $thisLevel;
         }
     }
 }

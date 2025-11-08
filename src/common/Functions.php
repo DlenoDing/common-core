@@ -62,6 +62,7 @@ if (!function_exists('get_header_val')) {
      */
     function get_header_val($key, $default = null)
     {
+        $default = !is_null($default) ? strval($default) : $default;
         if (Context::has(ServerRequestInterface::class)) {
             $request = ApplicationContext::getContainer()
                                          ->get(RequestInterface::class);

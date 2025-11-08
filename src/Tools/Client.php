@@ -13,7 +13,7 @@ class Client
      */
     public static function getIP()
     {
-        $ip = rpc_context_get(RpcContextConf::CLIENT_IP);
+        $ip = rpc_context_get(RpcContextConf::CLIENT_IP, '');
         if (empty($ip)) {
             $ip = get_header_val('Client-Ip', '');
             if (!self::checkIp($ip)) {
@@ -63,7 +63,7 @@ class Client
      */
     public static function getDevice()
     {
-        $device = rpc_context_get(RpcContextConf::CLIENT_DEVICE);
+        $device = rpc_context_get(RpcContextConf::CLIENT_DEVICE, '');
         if (empty($device)) {
             $device = get_header_val('Client-Device', '');
         }
@@ -76,18 +76,18 @@ class Client
     public static function getLang()
     {
         //优先取RPC请求传递的值
-        $language = rpc_context_get(RpcContextConf::LANGUAGE);
+        $language = rpc_context_get(RpcContextConf::LANGUAGE, '');
         if (empty($language)) {
             $languageKey = 'Client-Language';
             //优先取header
-            $language = get_header_val($languageKey);
+            $language = get_header_val($languageKey, '');
             //再取get参数
             if (empty($language)) {
-                $language = get_query_val($languageKey);
+                $language = get_query_val($languageKey, '');
             }
             //都没有则取客户端的可接收语言
             if (empty($language)) {
-                $language = get_header_val('Accept-Language');
+                $language = get_header_val('Accept-Language', '');
                 $language = explode(';', $language);
                 $language = explode(',', $language[0]);
                 $language = str_replace('-', '_', $language[0]);
@@ -109,14 +109,14 @@ class Client
     public static function getTimezone()
     {
         //优先取RPC请求传递的值
-        $timezone = rpc_context_get(RpcContextConf::TIMEZONE);
+        $timezone = rpc_context_get(RpcContextConf::TIMEZONE, '');
         if (empty($timezone)) {
             $timezoneKey = 'Client-Timezone';
             //优先取header
-            $timezone = get_header_val($timezoneKey);
+            $timezone = get_header_val($timezoneKey, '');
             //再取get参数
             if (empty($timezone)) {
-                $timezone = get_query_val($timezoneKey);
+                $timezone = get_query_val($timezoneKey, '');
             }
             if (empty($timezone)) {
                 $timezone = config('app.default_time_zone', 'UTC');
