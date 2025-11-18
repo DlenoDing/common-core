@@ -261,21 +261,26 @@ class HttpClient
         //----请求地址----
         curl_setopt($ch, CURLOPT_URL, $url);
 
-        $result       = curl_exec($ch);//执行请求，返回输出结果
-        $httpCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE); // 获取 HTTP 状态码
-        $headerSize   = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-        $headerString = substr($result, 0, $headerSize);
-        $body         = substr($result, $headerSize);
+        $result   = curl_exec($ch);//执行请求，返回输出结果
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE); // 获取 HTTP 状态码
+        $headers  = [];
+        $body     = '';
+        if (is_string($result)) {
+            $headerSize   = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $headerString = substr($result, 0, $headerSize);
+            $body         = substr($result, $headerSize);
 
-        // 将头部字符串转为数组
-        $headersArray = explode("\r\n", $headerString);
-        $headers      = [];
-        foreach ($headersArray as $headerLine) {
-            if (strpos($headerLine, ':') !== false) {
-                list($key, $value) = explode(':', $headerLine, 2);
-                $headers[strtolower(trim($key))][] = trim($value);
+            // 将头部字符串转为数组
+            $headersArray = explode("\r\n", $headerString);
+
+            foreach ($headersArray as $headerLine) {
+                if (strpos($headerLine, ':') !== false) {
+                    list($key, $value) = explode(':', $headerLine, 2);
+                    $headers[strtolower(trim($key))][] = trim($value);
+                }
             }
         }
+
         //------关闭连接-----
         curl_close($ch);
         return [
