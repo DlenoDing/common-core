@@ -162,13 +162,15 @@ class HttpClient
             $client->get($path);
         }
 
-        $res = $client->body;
+        $httpCode = $client->getStatusCode();
+        $headers  = $client->getHeaders() ?: [];
+        $body     = $client->getBody();
         $client->close();
-        if (empty($res)) {
-            return false;
-        }
-
-        return $res;
+        return [
+            'statusCode' => $httpCode,
+            'headers'    => $headers,
+            'body'       => $body,
+        ];
     }
 
     /**
@@ -213,7 +215,7 @@ class HttpClient
 
         //-----HEADER-----
         //头包含在输出中
-        curl_setopt($ch, CURLOPT_HEADER, false);
+        curl_setopt($ch, CURLOPT_HEADER, true);
         //请求发送头
         $header = array_merge(
             self::$defaultHeader,
@@ -259,16 +261,27 @@ class HttpClient
         //----请求地址----
         curl_setopt($ch, CURLOPT_URL, $url);
 
-        $result = curl_exec($ch);//执行请求，返回输出结果
-        $errno  = curl_errno($ch);//错误号
-        $error  = curl_error($ch);//错误消息
-        $info   = curl_getinfo($ch);//调用详情
+        $result       = curl_exec($ch);//执行请求，返回输出结果
+        $httpCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE); // 获取 HTTP 状态码
+        $headerSize   = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $headerString = substr($result, 0, $headerSize);
+        $body         = substr($result, $headerSize);
 
+        // 将头部字符串转为数组
+        $headersArray = explode("\r\n", $headerString);
+        $headers      = [];
+        foreach ($headersArray as $headerLine) {
+            if (strpos($headerLine, ':') !== false) {
+                list($key, $value) = explode(':', $headerLine, 2);
+                $headers[trim($key)][] = trim($value);
+            }
+        }
         //------关闭连接-----
         curl_close($ch);
-
-        unset($errno, $error, $ch, $info, $params, $header, $method, $timeout, $userAgent, $content);
-
-        return $result;
+        return [
+            'statusCode' => $httpCode,
+            'headers'    => $headers,
+            'body'       => $body,
+        ];
     }
 }
