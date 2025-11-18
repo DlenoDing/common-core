@@ -20,12 +20,12 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function get(string $url, $data, array $header = [], $timeout = -1)
+    public static function get(string $url, $data, array $header = [], $timeout = -1, $returnHeader = false)
     {
         if (Coroutine::inCoroutine()) {
-            return self::coRequest($url, $data, 'GET', $header, $timeout);
+            return self::coRequest($url, $data, 'GET', $header, $timeout, $returnHeader);
         } else {
-            return self::curlRequest($url, $data, 'GET', $header, $timeout);
+            return self::curlRequest($url, $data, 'GET', $header, $timeout, $returnHeader);
         }
     }
 
@@ -35,12 +35,12 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function post(string $url, $data, array $header = [], $timeout = -1)
+    public static function post(string $url, $data, array $header = [], $timeout = -1, $returnHeader = false)
     {
         if (Coroutine::inCoroutine()) {
-            return self::coRequest($url, $data, 'POST', $header, $timeout);
+            return self::coRequest($url, $data, 'POST', $header, $timeout, $returnHeader);
         } else {
-            return self::curlRequest($url, $data, 'POST', $header, $timeout);
+            return self::curlRequest($url, $data, 'POST', $header, $timeout, $returnHeader);
         }
     }
 
@@ -50,12 +50,12 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function put(string $url, $data, array $header = [], $timeout = -1)
+    public static function put(string $url, $data, array $header = [], $timeout = -1, $returnHeader = false)
     {
         if (Coroutine::inCoroutine()) {
-            return self::coRequest($url, $data, 'PUT', $header, $timeout);
+            return self::coRequest($url, $data, 'PUT', $header, $timeout, $returnHeader);
         } else {
-            return self::curlRequest($url, $data, 'PUT', $header, $timeout);
+            return self::curlRequest($url, $data, 'PUT', $header, $timeout, $returnHeader);
         }
     }
 
@@ -65,12 +65,12 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function patch(string $url, $data, array $header = [], $timeout = -1)
+    public static function patch(string $url, $data, array $header = [], $timeout = -1, $returnHeader = false)
     {
         if (Coroutine::inCoroutine()) {
-            return self::coRequest($url, $data, 'PATCH', $header, $timeout);
+            return self::coRequest($url, $data, 'PATCH', $header, $timeout, $returnHeader);
         } else {
-            return self::curlRequest($url, $data, 'PATCH', $header, $timeout);
+            return self::curlRequest($url, $data, 'PATCH', $header, $timeout, $returnHeader);
         }
     }
 
@@ -80,12 +80,12 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function delete(string $url, $data, array $header = [], $timeout = -1)
+    public static function delete(string $url, $data, array $header = [], $timeout = -1, $returnHeader = false)
     {
         if (Coroutine::inCoroutine()) {
-            return self::coRequest($url, $data, 'DELETE', $header, $timeout);
+            return self::coRequest($url, $data, 'DELETE', $header, $timeout, $returnHeader);
         } else {
-            return self::curlRequest($url, $data, 'DELETE', $header, $timeout);
+            return self::curlRequest($url, $data, 'DELETE', $header, $timeout, $returnHeader);
         }
     }
 
@@ -95,9 +95,9 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function coPost(string $url, $data, array $header = [], $timeout = -1)
+    public static function coPost(string $url, $data, array $header = [], $timeout = -1, $returnHeader = false)
     {
-        return self::coRequest($url, $data, 'POST', $header, $timeout);
+        return self::coRequest($url, $data, 'POST', $header, $timeout, $returnHeader);
     }
 
     /**
@@ -106,9 +106,9 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function curlPost(string $url, $data, array $header = [], $timeout = -1)
+    public static function curlPost(string $url, $data, array $header = [], $timeout = -1, $returnHeader = false)
     {
-        return self::curlRequest($url, $data, 'POST', $header, $timeout);
+        return self::curlRequest($url, $data, 'POST', $header, $timeout, $returnHeader);
     }
 
     /**
@@ -117,8 +117,14 @@ class HttpClient
      * @param string|array $data
      * @param array $header
      */
-    public static function coRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = -1)
-    {
+    public static function coRequest(
+        string $url,
+        $data,
+        $method = 'POST',
+        array $header = [],
+        $timeout = -1,
+        $returnHeader = false
+    ) {
         $url    = parse_url($url);
         $ssl    = $url['scheme'] == 'https' ? true : false;
         $port   = $url['port'] ?? ($ssl ? 443 : 80);
@@ -162,13 +168,20 @@ class HttpClient
             $client->get($path);
         }
 
-        $res = $client->body;
-        $client->close();
-        if (empty($res)) {
-            return false;
-        }
+        $body       = $client->getBody();
+        $headers    = $client->getHeaders();
+        $statusCode = $client->getStatusCode();
 
-        return $res;
+        $client->close();
+        if (!$returnHeader) {
+            return $body;
+        } else {
+            return [
+                'statusCode' => $statusCode,
+                'headers'    => $headers,
+                'body'       => $body,
+            ];
+        }
     }
 
     /**
@@ -180,8 +193,14 @@ class HttpClient
      * @param int $timeout
      * @return bool|mixed|string
      */
-    public static function curlRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = -1)
-    {
+    public static function curlRequest(
+        string $url,
+        $data,
+        $method = 'POST',
+        array $header = [],
+        $timeout = -1,
+        $returnHeader = false
+    ) {
         if (is_array($data) || is_object($data)) {
             $data = http_build_query($data);
         }
@@ -213,7 +232,7 @@ class HttpClient
 
         //-----HEADER-----
         //头包含在输出中
-        curl_setopt($ch, CURLOPT_HEADER, false);
+        curl_setopt($ch, CURLOPT_HEADER, $returnHeader ? true : false);
         //请求发送头
         $header = array_merge(
             self::$defaultHeader,
@@ -260,15 +279,24 @@ class HttpClient
         curl_setopt($ch, CURLOPT_URL, $url);
 
         $result = curl_exec($ch);//执行请求，返回输出结果
-        $errno  = curl_errno($ch);//错误号
-        $error  = curl_error($ch);//错误消息
-        $info   = curl_getinfo($ch);//调用详情
+        //$errno = curl_errno($ch);//错误号
+        //$error = curl_error($ch);//错误消息
+        //$info  = curl_getinfo($ch);//调用详情
+        if (!$returnHeader) {
+            curl_close($ch);
+            return $result;
+        } else {
+            curl_close($ch);
+            $httpCode   = curl_getinfo($ch, CURLINFO_HTTP_CODE); // 获取 HTTP 状态码
+            $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $headers    = substr($result, 0, $headerSize);
+            $body       = substr($result, $headerSize);
 
-        //------关闭连接-----
-        curl_close($ch);
-
-        unset($errno, $error, $ch, $info, $params, $header, $method, $timeout, $userAgent, $content);
-
-        return $result;
+            return [
+                'statusCode' => $httpCode,
+                'headers'    => $headers,
+                'body'       => $body,
+            ];
+        }
     }
 }
