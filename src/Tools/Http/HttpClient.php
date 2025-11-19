@@ -276,7 +276,7 @@ class HttpClient
             foreach ($headersArray as $headerLine) {
                 if (strpos($headerLine, ':') !== false) {
                     list($key, $value) = explode(':', $headerLine, 2);
-                    $headers[strtolower(trim($key))][] = trim($value);
+                    $headers[strtolower(trim($key))] = trim($value);
                 }
             }
         }
