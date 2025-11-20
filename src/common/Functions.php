@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 use Dleno\CommonCore\Conf\GlobalConf;
 use Dleno\CommonCore\Tools\Client;
-use Dleno\CommonCore\Tools\Check\CheckVal;
 use Hyperf\Context\ApplicationContext;
 use Hyperf\Context\Context;
 use Hyperf\HttpServer\Contract\RequestInterface;
@@ -456,13 +455,14 @@ if (!function_exists('str_to_time')) {
         if (is_numeric($strTime)) {
             return intval($strTime);
         }
-        if (!CheckVal::isDate($strTime) && !CheckVal::isDateTime($strTime)) {
-            return 0;
-        }
         $result = strtotime($strTime);
         if (empty($result)) {
-            $date   = new \DateTime($strTime);
-            $result = $date->format('U');
+            try {
+                $date   = new \DateTime($strTime);
+                $result = $date->format('U');
+            } catch (\Throwable $e) {
+                $result = 0;
+            }
         }
         return $result;
     }
