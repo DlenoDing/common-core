@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 use Dleno\CommonCore\Conf\GlobalConf;
 use Dleno\CommonCore\Tools\Client;
-use Dleno\CommonCore\Tools\Check\CheckVal;
 use Hyperf\Utils\ApplicationContext;
 use Hyperf\Context\Context;
 use Hyperf\HttpServer\Contract\RequestInterface;
@@ -452,85 +451,15 @@ if (!function_exists('str_to_time')) {
         if (is_numeric($strTime)) {
             return intval($strTime);
         }
-        if (!CheckVal::isDate($strTime) && !CheckVal::isDateTime($strTime)) {
-            return 0;
-        }
         $result = strtotime($strTime);
         if (empty($result)) {
-            $date   = new \DateTime($strTime);
-            $result = $date->format('U');
+            try {
+                $date   = new \DateTime($strTime);
+                $result = $date->format('U');
+            } catch (\Throwable $e) {
+                $result = 0;
+            }
         }
         return $result;
     }
-}
-
-if (!function_exists('catch_fatal_error_8888')) {
-    /**
-     * 捕获系统Fatal error错误
-     */
-    function catch_fatal_error_8888()
-    {
-        $error = error_get_last();
-        if (!isset($error['type'])) {
-            return true;
-        }
-        switch ($error['type']) {
-            case E_ERROR:
-            case E_WARNING:
-            case E_PARSE:
-                //case E_NOTICE:
-            case E_CORE_ERROR:
-            case E_CORE_WARNING:
-            case E_COMPILE_ERROR:
-            case E_COMPILE_WARNING:
-            case E_STRICT:
-            case E_RECOVERABLE_ERROR:
-                break;
-            default:
-                return true;
-        }
-
-        if (!ApplicationContext::hasContainer()) {
-            /** @var Psr\Container\ContainerInterface $container */
-            $container = require BASE_PATH . '/config/container.php';
-            if (class_exists(Dleno\HyperfEnvMulti\MultiEnvListener::class)) {
-                $container->get(Dleno\HyperfEnvMulti\MultiEnvListener::class)
-                          ->process(new Hyperf\Framework\Event\BootApplication());
-            }
-        }
-        if (class_exists(\Dleno\DingTalk\Robot::class)) {
-            try {
-                $msg = $error["message"] . ': ' . $error["line"] . ' -> ' . $error["file"];
-                throw new \Exception($msg);
-            } catch (\Throwable $e) {
-                static $traceConf = null;
-                if (empty($traceConf)) {
-                    $traceConf = config('dingtalk.trace', 'default');
-                    $config    = config('dingtalk.configs.' . $traceConf);
-                    if (empty($config)) {
-                        $traceConf = 'default';
-                    }
-                }
-                \Dleno\DingTalk\Robot::get($traceConf)
-                                     ->exception($e);
-            }
-        } else {
-            $server = config('app_name') . '(' . \Dleno\CommonCore\Tools\Server::getIpAddr() . ')';
-            //发送钉钉消息
-            \Dleno\CommonCore\Tools\Notice\DingDing::send(
-                [
-                    '启动错误' => null,
-                    'Server'   => $server,
-                    'File'     => str_replace(BASE_PATH, '', $error["file"]),
-                    'Line'     => $error["line"],
-                    'Message'  => str_replace(BASE_PATH, '', $error["message"]),
-                ]
-            );
-        }
-
-        return true;
-    }
-
-    //注册
-    register_shutdown_function('catch_fatal_error_8888');
 }
