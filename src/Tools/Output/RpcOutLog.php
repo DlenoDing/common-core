@@ -52,15 +52,13 @@ class RpcOutLog
                         $post[$key] = $value->toArray();
                     }
                 }
-                $traceId = Server::getTraceId();
                 $context = get_inject_obj(\Hyperf\Rpc\Context::class)->getData();
                 $channel = $channel ?? Logger::API_CHANNEL_RESPONSE;
                 Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Service::%s||Context::%s||Params::%s||Response::%s',
+                              'Server::%s||Service::%s||Context::%s||Params::%s||Response::%s',
                               $server,
-                              $traceId,
                               $service,
                               array_to_json($context),
                               array_to_json($post),

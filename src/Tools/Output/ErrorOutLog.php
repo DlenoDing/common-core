@@ -27,7 +27,6 @@ class ErrorOutLog
         //协程内执行
         Coroutine::create(
             function () use ($throwable, $level, $notice) {
-                $traceId = Server::getTraceId();
                 $server  = config('app_name') . '(' . Server::getIpAddr() . ')';
 
                 //实例化错误时就写入文件日志，防止错误被捕获
@@ -45,9 +44,8 @@ class ErrorOutLog
                 Logger::systemLog(Logger::SYSTEM_CHANNEL_EXCEPTION)
                       ->{$level}(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Message::%s||Trace::%s',
+                              'Server::%s||Message::%s||Trace::%s',
                               $server,
-                              $traceId,
                               $message,
                               array_to_json($trace)
                           )
