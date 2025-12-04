@@ -136,9 +136,9 @@ if (!function_exists('array_to_json')) {
      * @param array $array
      * @return false|string
      */
-    function array_to_json(array $array)
+    function array_to_json(array $array, $options = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)
     {
-        return \json_encode($array, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+        return \json_encode($array, $options);
     }
 }
 

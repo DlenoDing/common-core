@@ -2,6 +2,7 @@
 
 namespace Dleno\CommonCore\Logger;
 
+use Dleno\CommonCore\Tools\Server;
 use Monolog\Handler\RotatingFileHandler;
 use Monolog\Logger;
 
@@ -30,5 +31,12 @@ class LogFileHandler extends RotatingFileHandler
             default:
                 return Logger::INFO <= $this->level && Logger::WARNING >= $this->level;
         }
+    }
+
+    protected function write(array $record): void
+    {
+        $record['formatted'] .= '||Trace-Id::' . Server::getTraceId();
+        $record['formatted'] = str_replace(["\r", "\n"], '', $record['formatted'] . '');
+        parent::write($record);
     }
 }

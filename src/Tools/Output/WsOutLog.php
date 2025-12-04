@@ -68,15 +68,13 @@ class WsOutLog
                     $service = $request->path();
                 }
 
-                $traceId  = Server::getTraceId();
                 $channel  = $channel ?? Logger::API_CHANNEL_RESPONSE;
                 $clientIp = Client::getIP();
                 Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Ip::%s||Url::%s||Header::%s||Post::%s||Response::%s',
+                              'Server::%s||Ip::%s||Url::%s||Header::%s||Post::%s||Response::%s',
                               $server,
-                              $traceId,
                               $clientIp,
                               $service,
                               array_to_json($headers),

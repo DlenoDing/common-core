@@ -26,7 +26,6 @@ class ErrorOutLog
         //协程内执行
         Coroutine::create(
             function () use ($throwable, $level, $notice) {
-                $traceId = Server::getTraceId();
                 $server  = config('app_name') . '(' . Server::getIpAddr() . ')';
 
                 //实例化错误时就写入文件日志，防止错误被捕获
@@ -44,9 +43,8 @@ class ErrorOutLog
                 Logger::systemLog(Logger::SYSTEM_CHANNEL_EXCEPTION)
                       ->{$level}(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Message::%s||Trace::%s',
+                              'Server::%s||Message::%s||Trace::%s',
                               $server,
-                              $traceId,
                               $message,
                               array_to_json($trace)
                           )
@@ -62,28 +60,15 @@ class ErrorOutLog
 
                 //发送钉钉消息
                 if ($notice) {
-                    if (class_exists(Robot::class)) {
-                        if (empty(self::$traceConf)) {
-                            self::$traceConf = config('dingtalk.trace', 'default');
-                            $config    = config('dingtalk.configs.' . self::$traceConf);
-                            if (empty($config)) {
-                                self::$traceConf = 'default';
-                            }
+                    if (empty(self::$traceConf)) {
+                        self::$traceConf = config('dingtalk.trace', 'default');
+                        $config          = config('dingtalk.configs.' . self::$traceConf);
+                        if (empty($config)) {
+                            self::$traceConf = 'default';
                         }
-                        Robot::get(self::$traceConf)
-                             ->exception($throwable);
-                    } else {
-                        DingDing::send(
-                            [
-                                '运行错误'     => null,
-                                'Server'   => $server,
-                                'Trace-Id' => $traceId,
-                                'Method'   => $method,
-                                'Message'  => $message,
-                                //'Trace'  => $trace,
-                            ]
-                        );
                     }
+                    Robot::get(self::$traceConf)
+                         ->exception($throwable);
                 }
             }
         );

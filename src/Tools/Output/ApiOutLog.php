@@ -73,15 +73,13 @@ class ApiOutLog
 
                 $server = config('app_name') . '(' . Server::getIpAddr() . ')';
 
-                $traceId  = Server::getTraceId();
                 $channel  = $channel ?? Logger::API_CHANNEL_RESPONSE;
                 $clientIp = Client::getIP();
                 Logger::apiLog($channel, $group)
                       ->info(
                           sprintf(
-                              'Server::%s||Trace-Id::%s||Ip::%s||Url::%s||Header::%s||Query::%s||Post::%s||Response::%s',
+                              'Server::%s||Ip::%s||Url::%s||Header::%s||Query::%s||Post::%s||Response::%s',
                               $server,
-                              $traceId,
                               $clientIp,
                               $url,
                               array_to_json($headers),
