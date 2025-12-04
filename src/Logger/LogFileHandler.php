@@ -40,6 +40,7 @@ class LogFileHandler extends RotatingFileHandler
     {
         $record->formatted .= '||Trace-Id::' . Server::getTraceId();
         $record->formatted = str_replace(["\r", "\n"], '', $record->formatted . '');
+        $record->formatted .= "\n";
         parent::write($record);
     }
 }
