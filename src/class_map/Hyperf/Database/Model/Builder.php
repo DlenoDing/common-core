@@ -1784,7 +1784,7 @@ class Builder
      * @param int|null $page
      * @return array
      */
-    public function pager(array $columns = ['*'], int $perPage = null, int $page = null)
+    public function pager(array $columns = ['*'], ?int $perPage = null, ?int $page = null)
     {
         $perPage = $perPage ?? rpc_context_get(RpcContextConf::PER_PAGE);
         $perPage = intval($perPage ?? $this->model->getPerPage());

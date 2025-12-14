@@ -56,7 +56,7 @@ class BaseCoreController
      * @param string $msg
      * @return string
      */
-    protected function successData(array $data = null, $msg = '')
+    protected function successData(?array $data = null, $msg = '')
     {
         $ret         = RcodeConf::$dftReturn;
         $ret['data'] = $data ?? [];
