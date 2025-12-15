@@ -48,7 +48,7 @@ class DcsLock
                 );
             }
             //自动解锁
-            defer(
+            \Hyperf\Coroutine\defer(
                 function () use ($lockKey, $uuid) {
                     self::unlock($lockKey, $uuid);
                 }
