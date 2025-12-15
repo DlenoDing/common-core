@@ -12,8 +12,10 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Listener\Db;
 
+use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Tools\Server;
+use Hyperf\Context\Context;
 use Hyperf\Database\Events\QueryExecuted;
 use Hyperf\Event\Annotation\Listener;
 use Hyperf\Event\Contract\ListenerInterface;
@@ -38,6 +40,9 @@ class DbQueryExecutedListener implements ListenerInterface
     public function process(object $event): void
     {
         if ($event instanceof QueryExecuted) {
+            if (Context::get(RequestConf::LOGGER_NO_SQL, false)) {
+                return;
+            }
             $sql = $event->sql;
             if (strpos($sql, '`__transaction__`') === false) {
                 if (!Arr::isAssoc($event->bindings)) {

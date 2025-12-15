@@ -28,4 +28,6 @@ class RequestConf
     //不记录api正常输出日志
     const OUTPUT_NO_LOG = '__OUTPUT_NO_LOG__';
 
+    const LOGGER_NO_SQL = '__LOGGER_NO_SQL__';
+
 }
