@@ -13,15 +13,42 @@ class Distribution
     public static function getItemByWeight(array $data, int $enlarge = 1)
     {
         $enlarge <= 0 && $enlarge = 1;
-        $temp = [];
+
+        $pool = [];
         foreach ($data as $v) {
-            $v['weight'] = intval($v['weight'] ?? 0);
-            if ($v['weight'] > 0) {
-                $temp = array_merge($temp, array_fill(0, ($v['weight'] * $enlarge), $v));
+            $weight = intval(($v['weight'] ?? 0) * $enlarge);
+            if ($weight > 0) {
+                $pool[] = [$v, $weight];
             }
         }
-        shuffle($temp);
-        return !empty($temp) ? $temp[array_rand($temp)] : null;
+
+        if (empty($pool)) {
+            return null;
+        }
+
+        shuffle($pool);
+
+        $totalWeight = 0;
+        $cumulative  = [];
+        foreach ($pool as [$item, $weight]) {
+            $totalWeight += $weight;
+            $cumulative[] = [$item, $totalWeight];
+        }
+
+        $rand = random_int(1, $totalWeight);
+
+        $lo = 0;
+        $hi = count($cumulative) - 1;
+        while ($lo < $hi) {
+            $mid = ($lo + $hi) >> 1;
+            if ($cumulative[$mid][1] < $rand) {
+                $lo = $mid + 1;
+            } else {
+                $hi = $mid;
+            }
+        }
+
+        return $cumulative[$lo][0];
     }
 
     /**
