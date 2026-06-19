@@ -30,4 +30,11 @@ class RequestConf
 
     const LOGGER_NO_SQL = '__LOGGER_NO_SQL__';
 
+    //请求是否admin模块
+    const REQUEST_ADMIN_MODULE = '__ADMIN_MODULE__';
+    //请求路由白名单值
+    const REQUEST_ROUTE_VAL = '__ROUTE_VAL__';
+    //请求数据解密AES KEY
+    const REQUEST_AES_KEY = '__AES_KEY__';
+
 }
