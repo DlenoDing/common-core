@@ -199,6 +199,13 @@ class BaseModel extends Model
             }
             return true;
         }
+        //分表名只允许安全字符，防止 DDL 标识符注入（标识符无法用绑定参数，只能白名单校验，
+        //尤其 withTable() 可能传入外部入参）
+        if (!preg_match('/^[A-Za-z0-9_@\-]+$/', (string) $tableName)) {
+            Logger::systemLog('DB-SPLIT-ERROR')
+                  ->error('Invalid split table name: ' . $tableName);
+            return false;
+        }
         if (!$this->hasTable($tableName)) {
             try {
                 $autoIncrement = 1;
@@ -212,26 +219,40 @@ class BaseModel extends Model
                     ]
                 )) {
                     $prevTable     = $this->splitGetPrevTableData();
-                    $autoIncrement = $prevTable['AUTO_INCREMENT'] ?? 1;
+                    $autoIncrement = (int) ($prevTable['AUTO_INCREMENT'] ?? 1);
                 } elseif ($this->splitMode == self::SPLIT_MODE_NUM) {
                     $num = explode('@', $tableName);
                     $num = intval($num[1] ?? 0);
 
                     $autoIncrement = $this->splitMaxNum * $num + 1;
                 }
-                //show create table `table_name`;
-                $prefix = $this->getPrefix();
-                Db::connection($connectionName)
-                  ->update('CREATE TABLE `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
-                if ($autoIncrement > 1) {
+                $prefix        = $this->getPrefix();
+                $autoIncrement = (int) $autoIncrement;
+                //以基表 DDL 重建为单条原子建表语句：IF NOT EXISTS（并发安全、表已存在不报错）+
+                //出生即带 AUTO_INCREMENT，消除原 CREATE/ALTER 两步之间的空窗，
+                //杜绝并发窗口内插入导致的跨分片 ID 冲突
+                $createSql = $this->splitBuildCreateSql($prefix, $tableName, $autoIncrement);
+                if ($createSql !== null) {
                     Db::connection($connectionName)
-                      ->update('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
+                      ->statement($createSql);
+                } else {
+                    //兜底（几乎不触发）：取不到基表 DDL，退回 LIKE + ALTER 两步；
+                    //此路径无法做到原子，仍补上 ALTER 以保证自增基值不丢失
+                    Db::connection($connectionName)
+                      ->statement('CREATE TABLE IF NOT EXISTS `' . $prefix . $tableName . '` LIKE `' . $prefix . $this->baseTable . '`');
+                    if ($autoIncrement > 1) {
+                        Db::connection($connectionName)
+                          ->statement('ALTER TABLE `' . $prefix . $tableName . '` AUTO_INCREMENT=' . $autoIncrement);
+                    }
                 }
             } catch (\Throwable $e) {
-                Logger::systemLog('DB-SPLIT-ERROR')
-                      ->info($e->getMessage());
-
-                return false;
+                //表已存在（并发下其它协程/进程已抢先建好）属正常流程，落缓存继续；
+                //其它错误（连接/权限/磁盘等）才视为失败
+                if (!$this->isTableExistsError($e)) {
+                    Logger::systemLog('DB-SPLIT-ERROR')
+                          ->error($e->getMessage());
+                    return false;
+                }
             }
         }
         self::$hasTable[$connectionName][$tableName] = true;
@@ -241,13 +262,67 @@ class BaseModel extends Model
         return true;
     }
 
+    /**
+     * 以基表的完整 DDL 构建分表的单条原子建表语句。
+     * - 替换表名并加 IF NOT EXISTS：并发下只有一个真正建表，其余 no-op 不报错
+     * - 剥离基表自带的 AUTO_INCREMENT，避免分表继承主表计数器
+     * - 出生即写入分表应有的自增基值，消除 CREATE 与 ALTER 之间的空窗
+     * 取不到基表 DDL 时返回 null，由调用方退回 LIKE + ALTER 两步兜底。
+     */
+    private function splitBuildCreateSql(string $prefix, string $tableName, int $autoIncrement): ?string
+    {
+        $baseFull = $prefix . $this->baseTable;
+        $newFull  = $prefix . $tableName;
+
+        $rows      = Db::connection($this->getConnectionName())
+                       ->select('SHOW CREATE TABLE `' . $baseFull . '`');
+        $createSql = $rows[0]['Create Table'] ?? '';
+        if (empty($createSql)) {
+            return null;
+        }
+        //替换首个表名并补 IF NOT EXISTS
+        $createSql = preg_replace(
+            '/^CREATE TABLE `[^`]+`/',
+            'CREATE TABLE IF NOT EXISTS `' . $newFull . '`',
+            $createSql,
+            1
+        );
+        //去掉基表自带的 AUTO_INCREMENT 值
+        $createSql = preg_replace('/\s+AUTO_INCREMENT=\d+/i', '', $createSql);
+        //原子写入分表自增基值（=1 时用默认即可，无需显式设置）
+        if ($autoIncrement > 1) {
+            $createSql .= ' AUTO_INCREMENT=' . $autoIncrement;
+        }
+        return $createSql;
+    }
+
+    /**
+     * 判断异常是否为「表已存在」(MySQL 1050 / SQLSTATE 42S01)。
+     * 配合 CREATE TABLE IF NOT EXISTS 作为双重保险：并发抢建时一律视为成功并继续。
+     */
+    private function isTableExistsError(\Throwable $e): bool
+    {
+        if (stripos($e->getMessage(), 'already exists') !== false) {
+            return true;
+        }
+        foreach ([$e, $e->getPrevious()] as $ex) {
+            if ($ex instanceof \PDOException
+                && is_array($ex->errorInfo ?? null)
+                && ((int) ($ex->errorInfo[1] ?? 0)) === 1050) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private function hasTable($tableName)
     {
         $database = $this->getDataBase();
         $prefix   = $this->getPrefix();
         $tables   = Db::connection($this->getConnectionName())
                       ->select(
-                          "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` = '{$prefix}{$tableName}'"
+                          'SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND `TABLE_NAME` = ?',
+                          [$database, $prefix . $tableName]
                       );
         return count($tables) > 0;
     }
@@ -295,7 +370,8 @@ class BaseModel extends Model
         $prefix    = $this->getPrefix();
         $tableName = Db::connection($this->getConnectionName())
                        ->select(
-                           "SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' and AUTO_INCREMENT>'{$primaryId}' ORDER BY `AUTO_INCREMENT` ASC LIMIT 1"
+                           'SELECT `TABLE_NAME` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND `TABLE_NAME` LIKE ? AND `AUTO_INCREMENT` > ? ORDER BY `AUTO_INCREMENT` ASC LIMIT 1',
+                           [$database, $prefix . $this->baseTable . '@%', (int) $primaryId]
                        );
         $tableName = $tableName[0] ?? null;
         $tableName = $tableName['TABLE_NAME'] ?? null;
@@ -308,7 +384,8 @@ class BaseModel extends Model
         $prefix    = $this->getPrefix();
         $prevTable = Db::connection($this->getConnectionName())
                        ->select(
-                           "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` LIKE '{$prefix}{$this->baseTable}@%' ORDER BY `TABLE_NAME` DESC LIMIT 1"
+                           'SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND `TABLE_NAME` LIKE ? ORDER BY `TABLE_NAME` DESC LIMIT 1',
+                           [$database, $prefix . $this->baseTable . '@%']
                        );
         $prevTable = $prevTable[0] ?? [];
         if (empty($prevTable)) {
@@ -323,7 +400,8 @@ class BaseModel extends Model
         $prefix    = $this->getPrefix();
         $prevTable = Db::connection($this->getConnectionName())
                        ->select(
-                           "SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA`='{$database}' and `TABLE_NAME` = '{$prefix}{$this->baseTable}' ORDER BY `TABLE_NAME` DESC LIMIT 1"
+                           'SELECT `TABLE_NAME`,`AUTO_INCREMENT` FROM `information_schema`.`TABLES` WHERE `TABLE_SCHEMA` = ? AND `TABLE_NAME` = ? ORDER BY `TABLE_NAME` DESC LIMIT 1',
+                           [$database, $prefix . $this->baseTable]
                        );
         $prevTable = $prevTable[0] ?? [];
         return $prevTable;
