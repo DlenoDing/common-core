@@ -36,13 +36,14 @@ class Language
      */
     public static function get(string $key, array $replace = [], $number = null)
     {
-        $key = self::parseKey($key);
+        $parsedKey = self::parseKey($key);
         $translator = get_inject_obj(TranslatorInterface::class);
-        if (is_null($number)) {
-            return $translator->trans($key, $replace);
-        } else {
-            return $translator->transChoice($key, $number, $replace);
+        if (!$translator->has($parsedKey)) {
+            return $key; // 语言包无此key，原样返回，不污染原始内容
         }
+        return is_null($number)
+            ? $translator->trans($parsedKey, $replace)
+            : $translator->transChoice($parsedKey, $number, $replace);
     }
 
     /**
