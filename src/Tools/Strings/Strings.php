@@ -22,18 +22,38 @@ class Strings
      */
     public static function makeRandStr($len = 6, $type = self::RAND_TYPE_ALL)
     {
-        if ($type == self::RAND_TYPE_ALL) {
-            $chars = 'abcdefghijklmnpqrstuvwxyz0123456789';
-        } elseif ($type == self::RAND_TYPE_NUM) {
-            $chars = "0123456789";
+        if ($type == self::RAND_TYPE_NUM) {
+            $chars = '0123456789';
         } elseif ($type == self::RAND_TYPE_LETTER) {
-            $chars = "abcdefghijklmnpqrstuvwxyz";
+            $chars = 'abcdefghijklmnpqrstuvwxyz';
+        } else {
+            $chars = 'abcdefghijklmnpqrstuvwxyz0123456789';
         }
-        mt_srand((double)microtime() * mt_rand(1000000, 9999999) * getmypid());
+        $len = (int)$len;
+        if ($len <= 0) {
+            return '';
+        }
+        $n = strlen($chars);
+        //拒绝采样阈值：≤256 内最大的 n 的倍数；字节 ≥ 阈值则丢弃，消除 byte % n 的取模偏置
+        $limit   = intdiv(256, $n) * $n;
         $randstr = '';
-        while (strlen($randstr) < $len) {
-            $randstr .= substr($chars, (mt_rand() % strlen($chars)), 1);
-        }
+        //random_bytes 走 OS CSPRNG：密码学安全、无需播种(消除冗余/有害的 mt_srand)、协程安全；
+        //一次取一批字节(含余量覆盖被拒字节)，减少 syscall 次数
+        do {
+            $need  = $len - strlen($randstr);
+            $bytes = random_bytes($need + intdiv($need, 8) + 8);
+            $size  = strlen($bytes);
+            for ($i = 0; $i < $size; $i++) {
+                $v = ord($bytes[$i]);
+                if ($v >= $limit) {
+                    continue;//拒绝，避免取模偏置
+                }
+                $randstr .= $chars[$v % $n];
+                if (strlen($randstr) >= $len) {
+                    break 2;
+                }
+            }
+        } while (true);
         return $randstr;
     }
 
