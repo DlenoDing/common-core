@@ -35,13 +35,7 @@ class BaseCoreController
     {
         $serviceClass = '\\' . str_replace('Controller', 'Service', static::class);
         if (class_exists($serviceClass)) {
-            if (!ApplicationContext::getContainer()
-                                   ->has($serviceClass)) {
-                ApplicationContext::getContainer()
-                                  ->set($serviceClass, new $serviceClass());
-            }
-            $this->service = ApplicationContext::getContainer()
-                                               ->get($serviceClass);
+            $this->service = ApplicationContext::getContainer()->get($serviceClass);
         } else {
             throw new ServerException('Class Not Exists::' . $serviceClass);
         }

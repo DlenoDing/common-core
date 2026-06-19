@@ -6,49 +6,102 @@ namespace Dleno\CommonCore\Tools\Fibonacci;
 
 class Fibonacci
 {
-    const HEART_FREQUENCY = 55; //请求次数
+    const HEART_FREQUENCY = 55; // 心跳判定阈值（请求次数）
 
     /**
-     * 菲波拉契数解密
-     * Xtea和Rc4解密
-     *
-     * @param string $requestData 加密字符串
-     * @return array
+     * XTEA 协议固定密钥（与客户端约定，双端一致）
+     * 格式：4 个 uint32
      */
-    public static function recvData(string $requestData)
+    const XTEA_KEYS = [0x789f5645, 0xf68bd5a4, 0x81963ffa, 0xabcdef12];
+
+    /**
+     * RC4 加密时使用的 heart 值（菲波拉契数且 > HEART_FREQUENCY）
+     */
+    const HEART_RC4  = 89;
+
+    /**
+     * XTEA 加密时使用的 heart 值（不触发 RC4 分支）
+     */
+    const HEART_XTEA = 1;
+
+    /**
+     * 菲波拉契协议加密
+     * 输出结构：base64( heart(8字节hex) + data(hex) )
+     * - $useRc4 = true ：使用 RC4 加密（heart 取 HEART_RC4）
+     * - $useRc4 = false：使用 XTEA 加密（heart 取 HEART_XTEA）
+     *
+     * @param string     $data      明文数据
+     * @param bool       $useRc4    是否使用 RC4；默认 false（XTEA）
+     * @param int[]|null $xteaKeys  XTEA 密钥数组（4个uint32），不传则使用默认协议密钥
+     * @return string               base64 编码的密文
+     */
+    public static function encrypt(string $data, bool $useRc4 = false, ?array $xteaKeys = null): string
     {
-        $base64_decode = base64_decode($requestData);
-        $bin2hex       = ($base64_decode);
-        $heart         = '' . substr($bin2hex, 0, 8);
-        $normalData    = '' . substr($bin2hex, 8, strlen($bin2hex));
+        $xteaKeys = $xteaKeys ?? self::XTEA_KEYS;
+
         try {
-            if (self::isFibonacci(hexdec($heart)) && hexdec($heart) > self::HEART_FREQUENCY) {
-                $data   = $normalData;
-                $deData = Rc4::derc4($data);
+            if ($useRc4) {
+                $heartVal   = self::HEART_RC4;
+                $payloadHex = bin2hex(Rc4::encrypt($data));
             } else {
-                $keys_binary  = random_bytes(4 * 4);
-                $keys_array   = Xtea::binary_key_to_int_array($keys_binary);
-                $data         = ($normalData);
-                $string2Bytes = self::string2Bytes($data);
-                $deData       = Xtea::decrypt($string2Bytes, $keys_array);
+                $heartVal   = self::HEART_XTEA;
+                $payloadHex = bin2hex(Xtea::encrypt($data, $xteaKeys));
             }
-            $recvData['heart'] = hexdec($heart);
-            $recvData['data']  = $deData;
-            return $recvData;
+
+            return base64_encode(sprintf('%08x', $heartVal) . $payloadHex);
         } catch (\Throwable $e) {
-            throw new \Exception('解密出错:' . $e->getMessage());
+            throw new \Exception('加密出错: ' . $e->getMessage(), 0, $e);
         }
     }
 
+    /**
+     * 菲波拉契协议解密
+     * 输入结构：base64( heart(8字节hex) + data(hex) )
+     * - heart 为菲波拉契数且 > HEART_FREQUENCY 时：使用 RC4 解密
+     * - 否则：使用 XTEA 解密
+     *
+     * @param string     $cipherData  base64 编码的密文
+     * @param int[]|null $xteaKeys    XTEA 密钥数组（4个uint32），不传则使用默认协议密钥
+     * @return array ['heart' => int, 'data' => string]
+     */
+    public static function decrypt(string $cipherData, ?array $xteaKeys = null): array
+    {
+        $xteaKeys   = $xteaKeys ?? self::XTEA_KEYS;
+        $rawData    = base64_decode($cipherData);
+        $heartHex   = substr($rawData, 0, 8);
+        $payloadHex = substr($rawData, 8);
+        $heartVal   = hexdec($heartHex);
+
+        try {
+            if (self::isFibonacci($heartVal) && $heartVal > self::HEART_FREQUENCY) {
+                $decrypted = Rc4::decrypt(hex2bin($payloadHex));
+            } else {
+                $decrypted = Xtea::decrypt(hex2bin($payloadHex), $xteaKeys);
+            }
+
+            return [
+                'heart' => $heartVal,
+                'data'  => $decrypted,
+            ];
+        } catch (\Throwable $e) {
+            throw new \Exception('解密出错: ' . $e->getMessage(), 0, $e);
+        }
+    }
 
     /**
-     * 判断一个数是不是菲波拉契数
+     * 判断一个数是否为菲波拉契数
      *
-     * @param [type] $num
-     * @return boolean
+     * @param int|float $num
+     * @return bool
      */
-    private static function isFibonacci($num)
+    private static function isFibonacci(int|float $num): bool
     {
+        if ($num <= 0) {
+            return false;
+        }
+        if ($num === 1) {
+            return true;
+        }
         $i = 1;
         $j = 1;
         $n = 2;
@@ -57,27 +110,7 @@ class Fibonacci
             $i = $j;
             $j = $n;
         }
-        if ($n == $num) {
-            return true;
-        } else {
-            return false;
-        }
-    }
 
-
-    /**
-     * Undocumented function
-     *
-     * @param string $data
-     * @return string
-     */
-    private static function string2Bytes(string $data)
-    {
-        $ret = '';
-        for ($i = 0; $i < strlen($data); $i += 2) {
-            $temp = substr($data, $i, 2);
-            $ret  .= $temp;
-        }
-        return hex2bin($ret);
+        return $n === $num;
     }
 }

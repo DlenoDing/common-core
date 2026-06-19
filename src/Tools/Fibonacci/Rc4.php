@@ -6,65 +6,75 @@ namespace Dleno\CommonCore\Tools\Fibonacci;
 
 class Rc4
 {
+    const STATE_SIZE = 256;
+
     /**
-     * rc4加密
+     * RC4 加密
+     * 密钥由数据的 MD5 自动派生，密文末尾追加 MD5 供解密还原
      *
-     * @param string $data
-     * @return string
+     * @param string $data 明文
+     * @return string      密文 + 32 字节 MD5 密钥
      */
-    public static function enrc4($data)
+    public static function encrypt(string $data): string
     {
         $key = md5($data);
-        return self::rc4($key, $data) . $key;
+        return self::process($key, $data) . $key;
     }
 
     /**
-     * rc4解密
+     * RC4 解密
      *
-     * @param string $data
-     * @return string
+     * @param string $data 密文（末尾 32 字节为 MD5 密钥）
+     * @return string      明文
      */
-    public static function derc4($data)
+    public static function decrypt(string $data): string
     {
-        $key  = substr($data, strlen($data) - 32, strlen($data));
-        $data = substr($data, 0, strlen($data) - 32);
-        return self::rc4($key, $data);
+        $key  = substr($data, -32);
+        $data = substr($data, 0, -32);
+        return self::process($key, $data);
     }
 
     /**
-     * RC4算法
-     * 对称加密，加解密使用同一套函数
+     * RC4 核心算法（对称，加解密共用）
      *
-     * @param string $pwd 密钥
-     * @param string $data 需加密字符串
+     * @param string $key  密钥
+     * @param string $data 待处理数据
      * @return string
      */
-    private static function rc4($pwd, $data)
+    private static function process(string $key, string $data): string
     {
-        $key[]       = "";
-        $box[]       = "";
-        $cipher      = '';
-        $pwd_length  = strlen($pwd);
-        $data_length = strlen($data);
-        for ($i = 0; $i < 127; $i++) {
-            $key[$i] = ord(@$pwd[$i % $pwd_length]);
-            $box[$i] = $i;
+        $stateSize = self::STATE_SIZE;
+        $pwdLen    = strlen($key);
+        $dataLen   = strlen($data);
+
+        // 初始化密钥调度数组
+        $keyArr = [];
+        $box    = [];
+        for ($i = 0; $i < $stateSize; $i++) {
+            $keyArr[$i] = ord($key[$i % $pwdLen]);
+            $box[$i]    = $i;
         }
-        for ($j = $i = 0; $i < 128; $i++) {
-            $j       = ($j + @$box[$i] + @$key[$i]) % 256;
-            $tmp     = @$box[$i];
-            $box[$i] = @$box[$j];
+
+        // KSA（密钥调度算法）
+        for ($j = $i = 0; $i < $stateSize; $i++) {
+            $j       = ($j + $box[$i] + $keyArr[$i]) % $stateSize;
+            $tmp     = $box[$i];
+            $box[$i] = $box[$j];
             $box[$j] = $tmp;
         }
-        for ($a = $j = $i = 0; $i < $data_length; $i++) {
-            $a       = ($a + 1) % 256;
-            $j       = ($j + @$box[$a]) % 256;
-            $tmp     = @$box[$a];
-            $box[$a] = @$box[$j];
+
+        // PRGA（伪随机生成算法）
+        $cipher = '';
+        for ($a = $j = $i = 0; $i < $dataLen; $i++) {
+            $a       = ($a + 1) % $stateSize;
+            $j       = ($j + $box[$a]) % $stateSize;
+            $tmp     = $box[$a];
+            $box[$a] = $box[$j];
             $box[$j] = $tmp;
-            $k       = @$box[((@$box[$a] + @$box[$j]) % 256)];
-            $cipher  .= chr(ord(@$data[$i]) ^ $k);
+            $k       = $box[($box[$a] + $box[$j]) % $stateSize];
+            $cipher  .= chr(ord($data[$i]) ^ $k);
         }
+
         return $cipher;
     }
 }

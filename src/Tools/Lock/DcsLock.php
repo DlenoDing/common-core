@@ -181,14 +181,18 @@ EOF;
                   ->warning('Current Redis Can\'t Execute Lua!!');
             self::$isWarning = true;
         }
-        if ($redis->get($lockKey) == $uuid) {
-            if ($redis->del($lockKey)) {
-                if ($redis->lLen($lockKeyWait) == 0) {
-                    $redis->lpush($lockKeyWait, $uuid);
-                }
-                $redis->expire($lockKeyWait, 10);
-                return true;
+        //此分支为 Redis 不支持 Lua(EVAL) 时的降级兜底。以下为多条独立命令，非原子操作：
+        //get 与 del 之间若锁恰好 EX 到期并被其他客户端抢占，del 仍会无条件删除当前 key（可能误删他人锁），
+        //无法提供与 Lua 脚本等价的原子安全性，仅作尽力而为的释放。
+        if ($redis->get($lockKey) === $uuid) {
+            //与 Lua 行为对齐：get 命中即视为持锁方，del 的返回值不参与后续判断
+            //（Lua 中 del 返回整数 0 同样为真值，仍会继续唤醒等待队列）
+            $redis->del($lockKey);
+            if ($redis->lLen($lockKeyWait) == 0) {
+                $redis->lpush($lockKeyWait, $uuid);
             }
+            $redis->expire($lockKeyWait, 10);
+            return true;
         }
         return false;
     }
@@ -216,7 +220,7 @@ EOF;
         }
         $time   = number_format(microtime(true) - Context::get('RTIME'), 4) . 's';
         $memory = number_format((memory_get_usage() - Context::get('RMEM')) / 1024) . 'kb';
-        var_dump($uuid . ':' . 'Error Time:' . $time . ';MEM:' . $memory);
+        Logger::stdoutLog()->warning($uuid . ':' . 'Error Time:' . $time . ';MEM:' . $memory);
         throw new \RuntimeException('error');
     }
 }
