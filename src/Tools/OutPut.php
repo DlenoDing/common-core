@@ -122,11 +122,16 @@ class OutPut
                 $val = htmlspecialchars_decode($val, ENT_QUOTES);
             }
             //统一转换为驼峰格式的KEY命名(纯函数结果按 key 进程级缓存,列表场景同名字段大量复用,避免重复字符串运算)
+            //仅缓存非数字键且限上限:列表索引/ID 映射键无复用价值,否则会撑爆缓存(长驻 worker 内存泄漏)
             static $keyCache = [];
-            if (!isset($keyCache[$key])) {
-                $keyCache[$key] = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $key))));
+            if (isset($keyCache[$key])) {
+                $newKey = $keyCache[$key];
+            } else {
+                $newKey = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $key))));
+                if (!is_numeric($key) && count($keyCache) < 5000) {
+                    $keyCache[$key] = $newKey;
+                }
             }
-            $newKey = $keyCache[$key];
 
             $tmp[$newKey] = $val;
         }

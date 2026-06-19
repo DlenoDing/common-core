@@ -32,7 +32,7 @@ class ApiServer
                     if (!empty(config('app.route_prefix'))) {
                         $prefix = explode('/', trim(config('app.route_prefix'), '/'));
                         foreach ($prefix as $k => $pf) {
-                            if ($pf == $path[$k]) {
+                            if ($pf == ($path[$k] ?? null)) {//前缀段数可能多于 path,避免未定义下标告警
                                 unset($path[$k]);
                             }
                         }
