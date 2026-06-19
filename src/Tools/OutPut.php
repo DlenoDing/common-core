@@ -121,8 +121,12 @@ class OutPut
 
                 $val = htmlspecialchars_decode($val, ENT_QUOTES);
             }
-            //统一转换为驼峰格式的KEY命名
-            $newKey = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $key))));
+            //统一转换为驼峰格式的KEY命名(纯函数结果按 key 进程级缓存,列表场景同名字段大量复用,避免重复字符串运算)
+            static $keyCache = [];
+            if (!isset($keyCache[$key])) {
+                $keyCache[$key] = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $key))));
+            }
+            $newKey = $keyCache[$key];
 
             $tmp[$newKey] = $val;
         }
