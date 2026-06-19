@@ -20,11 +20,12 @@ class ApiServer
     public static function isAdminModule()
     {
         if (!Context::has(RequestConf::REQUEST_ADMIN_MODULE)) {
-            $isAdmin = false;
-            $mca     = Server::getRouteMca();
-            $module  = get_array_val($mca, 'module');
+            $isAdmin   = false;
+            $adminName = config('app.admin_module_name') ?: 'admin';//默认 admin(空/未配置均回落)
+            $mca       = Server::getRouteMca();
+            $module    = get_array_val($mca, 'module');
             if (!empty($module)) {
-                $isAdmin = get_array_val($module, 0) === config('app.admin_module_name') ? true : false;
+                $isAdmin = strcasecmp((string)get_array_val($module, 0), $adminName) === 0;//不区分大小写
             } else {
                 if (Context::has(ServerRequestInterface::class)) {
                     $request = get_inject_obj(ServerRequestInterface::class);
@@ -38,7 +39,7 @@ class ApiServer
                         }
                         $path = array_values($path);
                     }
-                    $isAdmin = ucfirst(get_array_val($path, 0)) === config('app.admin_module_name') ? true : false;
+                    $isAdmin = strcasecmp((string)get_array_val($path, 0), $adminName) === 0;//不区分大小写
                 }
             }
             Context::set(RequestConf::REQUEST_ADMIN_MODULE, $isAdmin);
