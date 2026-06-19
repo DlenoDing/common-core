@@ -62,9 +62,10 @@ class InitMiddleware implements MiddlewareInterface
         }
         Context::set(ResponseInterface::class, $response);
 
-        //-----------处理OPTIONS请求-----------
+        //-----------处理OPTIONS请求(预检)-----------
+        //预检按惯例返回 204 No Content(无响应体),仅携带上面的 CORS 头
         if ($request->getMethod() == 'OPTIONS') {
-            return $response;
+            return $response->withStatus(204);
         }
 
         //--------记录运行时间和内存占用情况--------
