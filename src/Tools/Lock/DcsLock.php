@@ -17,6 +17,12 @@ class DcsLock
 
     private static $unlock = [];
 
+    //解锁 Lua 脚本的 SHA1（进程级缓存，用于 EVALSHA，避免每次重传脚本）
+    private static ?string $luaSha = null;
+
+    //是否支持浮点阻塞超时（进程级缓存：Redis 6.0+ 服务端 + phpredis 5.3.0+ 客户端）
+    private static ?bool $floatTimeout = null;
+
     /**
      * 加锁（使用分布式锁时$uuid建议使用雪花算法）
      * @param string $lockKey 锁key
@@ -111,9 +117,18 @@ class DcsLock
             $wait = $ttl;
         }
         $popTime = microtime(true);
-        $wait    = intval($wait > 1000 ? round($wait / 1000) : 1);
-        $pop     = $redis->blPop($lockKey . '_WAIT', $wait);
-        $wait    = $wait * 1000;
+        if (self::supportFloatTimeout($redis)) {
+            //Redis 6+ 支持浮点秒阻塞超时，保留亚秒精度（最多3位小数），避免被放大到整秒
+            $blockSec = round($wait / 1000, 3);
+            if ($blockSec <= 0) {
+                $blockSec = 0.001;
+            }
+        } else {
+            //老版本只支持整秒，维持原有行为
+            $blockSec = intval($wait > 1000 ? round($wait / 1000) : 1);
+        }
+        $pop  = $redis->blPop($lockKey . '_WAIT', $blockSec);
+        $wait = (int)round($blockSec * 1000);
         if ($pop) {
             $popTime = intval((microtime(true) - $popTime) * 1000);
             if ($timeout > 0) {
@@ -166,12 +181,54 @@ return 0;
 EOF;
         $redis  = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
         $params = [$lockKey, $lockKey . '_WAIT', $uuid];
-        $ret    = $redis->eval($script, $params, 2);
+        $ret    = self::evalLua($redis, $script, $params, 2);
         if ($ret === false) {
             $ret = self::_unlock($redis, ...$params);
         }
         unset(self::$unlock[$lockKey . '::' . $uuid]);
         return $ret ? true : false;
+    }
+
+    /**
+     * 执行 Lua 脚本：优先 EVALSHA（按 SHA1 调用，省去每次重传完整脚本），
+     * EVALSHA 失败（脚本未缓存，如 Redis 重启/首次调用）时回退 EVAL（执行同时会缓存脚本，
+     * 后续即可命中 EVALSHA）。
+     *
+     * 注：Hyperf 连接池下每次命令可能落在不同连接，无法依赖 getLastError 判断 NOSCRIPT，
+     * 故以「EVALSHA 返回 false 即回退 EVAL」的方式兜底（脚本正常返回 0/1 不为 false，不会误触发）。
+     *
+     * @return mixed 脚本返回值；Lua 完全不可用时返回 false
+     */
+    private static function evalLua(RedisProxy $redis, string $script, array $params, int $numKeys)
+    {
+        if (self::$luaSha === null) {
+            self::$luaSha = sha1($script);
+        }
+        $ret = $redis->evalSha(self::$luaSha, $params, $numKeys);
+        if ($ret === false) {
+            $ret = $redis->eval($script, $params, $numKeys);
+        }
+        return $ret;
+    }
+
+    /**
+     * 检测是否可使用浮点阻塞超时（结果进程级缓存，仅首次探测一次）。
+     * 需同时满足：Redis 服务端 >= 6.0.0、phpredis 客户端 >= 5.3.0（可传 double 超时）。
+     */
+    private static function supportFloatTimeout(RedisProxy $redis): bool
+    {
+        if (self::$floatTimeout !== null) {
+            return self::$floatTimeout;
+        }
+        $extOk = version_compare((string)phpversion('redis'), '5.3.0', '>=');
+        $serverOk = false;
+        if ($extOk) {
+            $info    = $redis->info('server');
+            $version = is_array($info) ? ($info['redis_version'] ?? '0') : '0';
+            $serverOk = version_compare((string)$version, '6.0.0', '>=');
+        }
+        self::$floatTimeout = $extOk && $serverOk;
+        return self::$floatTimeout;
     }
 
     private static function _unlock(RedisProxy $redis, string $lockKey, string $lockKeyWait, string $uuid)
