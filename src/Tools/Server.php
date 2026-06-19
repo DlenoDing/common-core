@@ -174,7 +174,8 @@ class Server
                 foreach ($hostnames as $hostname) {
                     if (substr($hostname, 0, 1) === '*') {
                         $hostname = substr($hostname, 1);
-                        if (strpos($requestHost, $hostname)) {
+                        //!== false:strpos 命中位置 0 会被当 false，导致"宿主名以授权域开头"误判失败
+                        if (strpos($requestHost, $hostname) !== false) {
                             return true;
                         }
                     } else {
