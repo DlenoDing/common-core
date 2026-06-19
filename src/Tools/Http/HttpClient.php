@@ -119,8 +119,12 @@ class HttpClient
      */
     public static function coRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = -1)
     {
-        $url    = parse_url($url);
-        $ssl    = $url['scheme'] == 'https' ? true : false;
+        $parsed = parse_url($url);
+        if (!is_array($parsed) || empty($parsed['host'])) {
+            throw new \InvalidArgumentException("Invalid URL: {$url}");
+        }
+        $url    = $parsed;
+        $ssl    = ($url['scheme'] ?? '') === 'https';
         $port   = $url['port'] ?? ($ssl ? 443 : 80);
         $client = new \Swoole\Coroutine\Http\Client($url['host'], intval($port), $ssl);
         $client->set(['timeout' => $timeout]);//-1为不超时
@@ -188,7 +192,10 @@ class HttpClient
             $data = http_build_query($data);
         }
 
-        $paeseUrl = parse_url($url);
+        $parsedUrl = parse_url($url);
+        if (!is_array($parsedUrl) || empty($parsedUrl['host'])) {
+            throw new \InvalidArgumentException("Invalid URL: {$url}");
+        }
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_ENCODING, 'gzip,deflate');//文档解码
@@ -207,7 +214,7 @@ class HttpClient
         }
 
         //----HTTPS----
-        $ssl = $paeseUrl['scheme'] == 'https' ? true : false;
+        $ssl = ($parsedUrl['scheme'] ?? '') === 'https';
         if ($ssl) {
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -220,7 +227,7 @@ class HttpClient
         $header = array_merge(
             self::$defaultHeader,
             [
-                'Host' => $paeseUrl['host'],
+                'Host' => $parsedUrl['host'],
             ],
             $header
         );
@@ -250,7 +257,7 @@ class HttpClient
             curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
         } else {
             if ($data) {
-                if (isset($paeseUrl['query'])) {
+                if (isset($parsedUrl['query'])) {
                     $url .= '&' . $data;
                 } else {
                     $url .= '?' . $data;
