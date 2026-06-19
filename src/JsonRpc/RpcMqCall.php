@@ -48,9 +48,11 @@ class RpcMqCall
                     }
                 } catch (\Throwable $t) {
                     throw new ServerException($className.'::'.$callback[1]."\r\n".$t->getMessage());
-                    //return false;
                 }
             }
+            //发送失败一律返回 false(callback 仅作失败处理钩子,不改变"发送失败"的结果),
+            //避免调用方误以为发送成功导致消息静默丢失
+            return false;
         }
 
         return true;
@@ -80,8 +82,11 @@ class RpcMqCall
                 $number = $number + 1;
                 if ($number <= $retry) {
                     $data['number'] = $number;
-                    \go(function() use ($producerName, $data, $delay) {
-                        Coroutine::sleep($delay);
+                    //用 Hyperf Coroutine::create(覆盖版会复制 app.global_context,继承 traceId/语言/时区等),
+                    //避免裸 \go() 丢失父协程上下文;sleep 用 \Swoole\Coroutine::sleep(真协程让出),
+                    //避免被 class_map 覆盖的 Coroutine::sleep(同步 usleep)阻塞 Worker
+                    Coroutine::create(function () use ($producerName, $data, $delay) {
+                        \Swoole\Coroutine::sleep($delay);
                         $message = new $producerName($data);
                         Producer::send($message, true);
                     });
