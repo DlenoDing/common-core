@@ -53,8 +53,10 @@ class DbQueryExecutedListener implements ListenerInterface
                 $sql = str_replace(PHP_EOL, " ", $sql);
                 $sql = str_replace("\r", "", $sql);
                 $server = config('app_name') . '(' . Server::getIpAddr() . ')';
+                //慢查询(默认 >1000ms)以 warning 记录,便于单独告警/排查;普通查询仍 debug
+                $level = $event->time > (float)config('app.slow_sql_time', 1000) ? 'warning' : 'debug';
                 Logger::sqlLog(Logger::SQL_CHANNEL_QUERY)
-                      ->debug(
+                      ->$level(
                           sprintf(
                               'Server::%s||Connection::%s||[%s]||%s',
                               $server,

@@ -135,7 +135,6 @@ class Distribution
             $data[$idx]['list'][] = ['t' => $count - $scount];
         }
 
-        var_dump($data);
         return $data;
     }
 
@@ -159,8 +158,6 @@ class Distribution
             $val               = $this->getItemByWeight($prizes);
             $arr[$val['code']] = ($arr[$val['code']] ?? 0) + 1;
         }
-        var_dump($arr);
-
         return [];
     }
 
