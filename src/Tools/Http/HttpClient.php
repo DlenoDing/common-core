@@ -217,10 +217,10 @@ class HttpClient
         curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
 
         //----设置超时----
-        curl_setopt($ch, CURLOPT_NOSIGNAL, true);//支持毫秒级别超时设
+        curl_setopt($ch, CURLOPT_NOSIGNAL, true);//禁用信号机制
         //从服务器接收缓冲完成前需要等待多长时间
         if ($timeout > 0) {
-            curl_setopt($ch, CURLOPT_TIMEOUT_MS, $timeout);//毫秒
+            curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);//秒
         }
 
         //----HTTPS----
