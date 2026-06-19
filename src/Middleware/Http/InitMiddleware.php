@@ -48,11 +48,18 @@ class InitMiddleware implements MiddlewareInterface
             ->withoutHeader('Content-Type')
             ->withHeader('Content-Type', 'application/json; charset=utf-8')
             // 跨域处理
-            ->withHeader('Access-Control-Allow-Credentials', 'true')
             ->withHeader('Access-Control-Max-Age', '3600')
-            ->withHeader('Access-Control-Allow-Origin', '*')
             ->withHeader('Access-Control-Allow-Methods', \join(',', $allowMethods))
             ->withHeader('Access-Control-Allow-Headers', \join(',', $allowHeaders));
+        // 带凭证(Allow-Credentials:true)时 Allow-Origin 不能为 *(CORS 规范禁止，浏览器会拒绝响应)，
+        // 必须回显具体 Origin；并加 Vary: Origin 防止共享缓存把某源的 ACAO 错发给其它源。
+        $origin = $request->getHeaderLine('Origin');
+        if ($origin !== '' && self::isAllowedOrigin($origin)) {
+            $response = $response
+                ->withHeader('Access-Control-Allow-Origin', $origin)
+                ->withHeader('Access-Control-Allow-Credentials', 'true')
+                ->withHeader('Vary', 'Origin');
+        }
         Context::set(ResponseInterface::class, $response);
 
         //-----------处理OPTIONS请求-----------
@@ -107,5 +114,32 @@ class InitMiddleware implements MiddlewareInterface
         if (get_post_val('perPage')) {
             rpc_context_set(RpcContextConf::PER_PAGE, (int)get_post_val('perPage'));//每页记录数
         }
+    }
+
+    /**
+     * 是否允许该跨域来源（用于回显 Access-Control-Allow-Origin）。
+     * 规则：app.ac_allow_origins 为 '*' / 未设置 / 空 → 回显任意合法 http(s) 源；
+     *       否则按白名单精确匹配（推荐在带 Allow-Credentials 时使用具体白名单）。
+     * @param string $origin 请求头 Origin
+     * @return bool
+     */
+    private static function isAllowedOrigin(string $origin): bool
+    {
+        //仅接受 http(s)://host 形式，排除 "null"、非法值等
+        if (!preg_match('#^https?://[^/]+$#', $origin)) {
+            return false;
+        }
+        $allow = config('app.ac_allow_origins', []);
+        //未设置 / 空（null/''/[]）→ 回显任意（合法）源
+        if (empty($allow)) {
+            return true;
+        }
+        $allow = is_array($allow) ? $allow : [$allow];
+        //'*' → 回显任意（合法）源
+        if (in_array('*', $allow, true)) {
+            return true;
+        }
+        //否则按白名单精确匹配
+        return in_array($origin, $allow, true);
     }
 }
