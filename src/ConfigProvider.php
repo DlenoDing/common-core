@@ -21,6 +21,8 @@ use Hyperf\Contract\NormalizerInterface;
 use Hyperf\Database\Commands\Ast\ModelUpdateVisitor as AstModelUpdateVisitor;
 use Hyperf\Database\Model\Builder;
 use Dleno\CommonCore\Model\ModelUpdateVisitor;
+use Dleno\CommonCore\Websocket\Contract\WsHookInterface;
+use Dleno\CommonCore\Websocket\Hook\AbstractWsHook;
 
 class ConfigProvider
 {
@@ -40,11 +42,10 @@ class ConfigProvider
                 //JsonRpc返回 PHP 对象
                 NormalizerInterface::class   => new SerializerFactory(Serializer::class),
 
-                //WS 默认绑定：钩子默认 no-op（业务不覆盖即零成本；身份解析现走 WsHook::onHandshake，取代了 WsIdentityResolver）。
+                //WS 默认绑定：钩子默认 no-op（业务不覆盖即零成本；身份解析现走 WsHook::onHandshake）。
                 //WsBindStrategyInterface 无包内默认，业务必须在 app dependencies.php 绑定
                 //（绑定策略默认实现已下放业务端：App\WebSocket\Bind\DefaultWsBindStrategy）。
-                \Dleno\CommonCore\Websocket\Contract\WsHookInterface::class
-                    => \Dleno\CommonCore\Websocket\Hook\AbstractWsHook::class,
+                WsHookInterface::class => AbstractWsHook::class,
             ],
             'annotations'  => [
                 'scan' => [
