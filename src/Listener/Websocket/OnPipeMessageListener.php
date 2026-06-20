@@ -10,7 +10,9 @@ use Hyperf\Event\Contract\ListenerInterface;
 use Hyperf\Framework\Event\OnPipeMessage;
 use Hyperf\Process\ProcessCollector;
 use Dleno\CommonCore\PipeMessage\Websocket\FdCheckPipeMessage;
+use Dleno\CommonCore\PipeMessage\Websocket\WsBroadcastPipeMessage;
 use Dleno\CommonCore\Tools\Websocket\CheckFd;
+use Dleno\CommonCore\Tools\Websocket\WsBroadcast;
 
 /**
  * 接收 fd 检查的 PipeMessage（请求/回包）。
@@ -45,6 +47,19 @@ class OnPipeMessageListener implements ListenerInterface
 
     public function process(object $event): void
     {
+        //WS 广播：投递给本事件 worker，推送给其名下全部活跃连接
+        if (property_exists($event, 'data') && $event->data instanceof WsBroadcastPipeMessage) {
+            //仅事件 worker 处理（OnPipeMessage 含 $event->server）；自定义进程收到则空转
+            if (property_exists($event, 'server') && $event->server !== null) {
+                try {
+                    WsBroadcast::pushLocal($event->server, $event->data);
+                } catch (\Throwable $e) {
+                    $this->logger->warning($e->getMessage());
+                }
+            }
+            return;
+        }
+
         if (!property_exists($event, 'data') || !($event->data instanceof FdCheckPipeMessage)) {
             return;
         }
