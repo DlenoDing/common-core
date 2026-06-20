@@ -39,6 +39,14 @@ class ConfigProvider
 
                 //JsonRpc返回 PHP 对象
                 NormalizerInterface::class   => new SerializerFactory(Serializer::class),
+
+                //WS 默认绑定（业务不覆盖即用默认）：
+                //钩子默认全 no-op；绑定策略默认 = 现状(account_id+token)。
+                //WsIdentityResolverInterface 无默认，业务必须在 app dependencies.php 绑定。
+                \Dleno\CommonCore\Contract\Websocket\WsHookInterface::class
+                    => \Dleno\CommonCore\Base\Websocket\AbstractWsHook::class,
+                \Dleno\CommonCore\Contract\Websocket\WsBindStrategyInterface::class
+                    => \Dleno\CommonCore\Tools\Websocket\DefaultWsBindStrategy::class,
             ],
             'annotations'  => [
                 'scan' => [
