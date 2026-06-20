@@ -25,8 +25,12 @@ class WsBindSweeper
 {
     const LOCK_SUFFIX   = 'bind:sweep:leader';   // 逻辑键(自动加 OPT_PREFIX)；值=本机 serverKey
     const CURSOR_SUFFIX = 'bind:sweep:cursor';
-    const LOCK_TTL      = 60;                     // leader 租约(秒)
-    const SCAN_COUNT    = 500;                    // 每批扫描量
+    const LOCK_TTL        = 60;                   // leader 租约(秒)
+    const SCAN_COUNT      = 500;                  // 每批扫描量
+    const SWEEP_INTERVAL  = 60;                   // 两次清扫最小间隔(秒)，与注册循环(15s)解耦——清扫是 best-effort GC，无需高频
+
+    /** 本进程上次执行 sweepBatch 的时间(秒)。每 worker 一份。 */
+    private static int $lastSweepAt = 0;
 
     public static function tick(): void
     {
@@ -35,9 +39,15 @@ class WsBindSweeper
             if (WsRedisCap::supportsHExpire($redis)) {
                 return; // 7.4+：HEXPIRE 已自洁，无需清扫
             }
+            //leader 每轮续租(保持锁新鲜、不抖动)；但真正的扫描按 SWEEP_INTERVAL 限频,不跟注册的 15s 走
             if (!self::acquireLeader($redis)) {
                 return; // 非 leader，本轮不扫
             }
+            $now = time();
+            if (($now - self::$lastSweepAt) < self::SWEEP_INTERVAL) {
+                return; // 距上次清扫不足间隔,本轮只续租不扫
+            }
+            self::$lastSweepAt = $now;
             self::sweepBatch($redis);
         } catch (\Throwable $e) {
             // best-effort：忽略，不影响注册主循环
