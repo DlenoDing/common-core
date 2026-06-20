@@ -6,16 +6,19 @@ namespace Dleno\CommonCore\Websocket\Process;
 
 use Dleno\CommonCore\Base\AsyncQueue\BaseQueueConsumer;
 use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\WsProcessSwitch;
 use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
+use Hyperf\Process\Annotation\Process;
 
 /**
- * WS 实时消息消费进程基类（纯基建，逻辑归包锁死）。
+ * WS 实时消息消费进程（纯基建，归包锁死）。
  *
- * 消费本机 per-IP 队列（ws:queue:message:<serverKey>，走 WsPushMsgComponent::getQueue）。
- * 业务侧只需薄子类补 #[Process] 注解（供 Hyperf 扫描注册）+ isEnable（部署门禁，如 app_env/ENABLE_WS）；
- * 调优参数(processes/concurrent.limit/max_messages)走 config('websocket.queue')，无需 override getConfig。
+ * 消费本机 per-IP 队列（ws:queue:message:<serverKey>）。由 #[Process] 自动注册；
+ * 是否启动由 WsProcessSwitch 门禁（ENABLE_WS + local 开关）控制；调优参数（processes/concurrent.limit/
+ * max_messages）走 config('websocket.queue')。业务无需也不应继承本类——继承即可篡改核心消费逻辑。
  */
-abstract class AbstractDcsMessageConsumer extends BaseQueueConsumer
+#[Process]
+class DcsMessageConsumer extends BaseQueueConsumer
 {
     /**
      * 本机 per-IP 队列名缓存。
@@ -41,5 +44,10 @@ abstract class AbstractDcsMessageConsumer extends BaseQueueConsumer
     public function getConfig()
     {
         return WsQueueConfig::resolve($this->getQueue());
+    }
+
+    public function isEnable($server): bool
+    {
+        return WsProcessSwitch::shouldRun();
     }
 }
