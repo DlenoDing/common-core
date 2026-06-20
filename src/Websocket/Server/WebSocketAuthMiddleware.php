@@ -25,10 +25,11 @@ use function Hyperf\Config\config;
  * 通用骨架：固定时区、运行时统计、traceId、Context/WsContext 写入、HandShake 日志；
  * 业务定制全部走三段钩子（依次 before → on → after），握手核心逻辑收敛进包、外部不可改坏：
  *  - beforeHandshake($request)                 鉴权之前：风控/灰度；抛异常=拒绝握手。
- *  - onHandshake($request): $request           **中置**：业务身份解析（读 token→身份）、可改 header、
- *                                              WsIdentity::set 完整身份（供 setBind→bindDimensions）；抛异常=拒绝握手。
+ *  - onHandshake($request): WsHandshakeResult  **中置**：业务身份解析（读 token→身份）、可改 header；抛异常=拒绝握手。
+ *                                              只返回 (改过的)request + 完整身份；**WsIdentity::set 由本中间件统一执行**
+ *                                              （供 setBind→bindDimensions）—— 业务不写这步、也不会漏写而致绑定链静默失效。
  *                                              —— 这一段取代了原来的 WsIdentityResolver；业务在 AppWsHook::onHandshake 里实现。
- *  - afterHandshake($request, $identity)       身份解析+Context 已写之后：埋点/presence 准备等。
+ *  - afterHandshake($request, $identity)       身份已 set + Context 已写之后：埋点/presence 准备等。
  *
  * 接入：app 的 config/autoload/middlewares.php 的 ws 段引用本类即可，无需在项目里再建握手中间件。
  */
@@ -50,15 +51,18 @@ class WebSocketAuthMiddleware implements MiddlewareInterface
 
         //前置钩子(默认 no-op;风控/灰度,抛异常=拒绝握手)
         $this->wsHook->beforeHandshake($request);
-        //中置钩子(业务身份解析:读 token→身份、改 header、WsIdentity::set;抛异常=拒绝握手;返回可能改过的 request)
-        $request = $this->wsHook->onHandshake($request);
+        //中置钩子(业务身份解析:读 token→身份、改 header;抛异常=拒绝握手;返回 改过的 request + 完整身份)
+        $result   = $this->wsHook->onHandshake($request);
+        $request  = $result->request;
+        //身份入 WsContext 由本中间件统一执行(业务不写,杜绝漏写致绑定链静默失效);空身份=匿名连接,setBind 自会守卫不绑
+        WsIdentity::set($result->identity);
 
         //仅 Open 使用 / 后续该 fd 全局使用
         Context::set(ServerRequestInterface::class, $request);
         WsContext::set(ServerRequestInterface::class, $request);
 
-        //后置钩子(默认 no-op;身份(WsIdentity)已解析 + Context 已写)
-        $this->wsHook->afterHandshake($request, WsIdentity::get());
+        //后置钩子(默认 no-op;身份(WsIdentity)已 set + Context 已写)
+        $this->wsHook->afterHandshake($request, $result->identity);
 
         //接口输出日志
         WsOutLog::writeLog('HandShake', 'WS-RESPONSE');

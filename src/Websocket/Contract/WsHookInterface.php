@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Websocket\Contract;
 
+use Dleno\CommonCore\Websocket\Support\WsHandshakeResult;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -19,7 +20,7 @@ interface WsHookInterface
 {
     // —— 握手（WebSocketAuthMiddleware 内，依次 before → on → after）——
     public function beforeHandshake(ServerRequestInterface $request): void;        // 鉴权之前：风控/灰度；抛异常=拒绝握手
-    public function onHandshake(ServerRequestInterface $request): ServerRequestInterface; // 中置：业务身份解析(读 token→身份)、可改 header、WsIdentity::set 完整身份；抛异常=拒绝握手；返回(可能改过的)request
+    public function onHandshake(ServerRequestInterface $request): WsHandshakeResult; // 中置：业务身份解析(读 token→身份)、可改 header；抛异常=拒绝握手；返回 (改过的)request + 完整身份(由中间件统一 WsIdentity::set，业务不必也不能漏写)
     public function afterHandshake(ServerRequestInterface $request, array $identity): void; // 身份解析+写 Context 之后
 
     // —— open（WsOpen，onOpen 协程内）——

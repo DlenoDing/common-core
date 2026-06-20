@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Websocket\Hook;
 
 use Dleno\CommonCore\Websocket\Contract\WsHookInterface;
+use Dleno\CommonCore\Websocket\Support\WsHandshakeResult;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -16,7 +17,7 @@ use Psr\Http\Message\ServerRequestInterface;
 class AbstractWsHook implements WsHookInterface
 {
     public function beforeHandshake(ServerRequestInterface $request): void {}
-    public function onHandshake(ServerRequestInterface $request): ServerRequestInterface { return $request; }
+    public function onHandshake(ServerRequestInterface $request): WsHandshakeResult { return new WsHandshakeResult($request); } // 默认空身份 = 匿名连接(不解析、不绑定)
     public function afterHandshake(ServerRequestInterface $request, array $identity): void {}
 
     public function beforeOpen($server, $request): void {}
