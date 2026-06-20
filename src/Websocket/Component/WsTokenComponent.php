@@ -5,26 +5,30 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Websocket\Component;
 
 use Dleno\CommonCore\Base\BaseCoreComponent;
+use Dleno\CommonCore\Websocket\Contract\WsBindStrategyInterface;
 use Dleno\CommonCore\Websocket\Support\WsKeys;
 use Hyperf\Di\Annotation\Inject;
 use Hyperf\Redis\Redis;
 
 /**
- * WS 连接 token / 身份绑定表（纯基建，下沉自脚手架）。
+ * WS 连接身份绑定表（纯基建）。
  *
- * 两条索引：
- *   - serverFd 主绑定 ws:bind:sfd:<sv>:<fd> => json{accountId, token}（Close 时反查身份）
- *   - 身份反向 ws:bind:account_id:<accountId> (hash) field=token => json(serverFd)（按身份寻址下发）
+ * 绑定维度由 WsBindStrategyInterface 决定（业务可注入自定义实现：token / device / 多端…）。
+ *   - 正向 主绑定 <prefix>bind:sfd:<sv>:<fd> => json(全部维度)        （Close 时据此反删各反向索引）
+ *   - 反向 索引   <prefix>bind:<dim>:<value> (hash) field=<sv:fd> => json(serverFd)
+ *                 对 strategy->addressableDimensions() 里每个维度各建一份，可按维度寻址下发。
  *
- * 全部 key 走 WsKeys（字节级兼容脚手架 WsServerConf）。绑定数据字段保持 camelCase `accountId`
- * 与 token-as-hash-field 结构不变 —— 这是与在线连接/在途 job 的 BC 约束（见方案 §11.D），
- * 维度抽象（WsBindStrategy）留待后续版本接入，本类暂不接策略。
- * 业务侧用空子类 extends 之即可。
+ * 反向索引 field 用 "sv:fd"（每连接唯一），同账号多连接(即便同 token)互不覆盖。
+ * 默认 DefaultWsBindStrategy = account_id + token，按 account_id 可寻址（单端现状）。
+ * 业务侧用空子类 extends；需要多端/设备维度时实现 WsBindStrategyInterface 并在 dependencies.php 覆盖绑定。
  */
 class WsTokenComponent extends BaseCoreComponent
 {
     #[Inject]
     protected Redis $redis;
+
+    #[Inject]
+    protected WsBindStrategyInterface $bindStrategy;
 
     /**
      * 设置连接绑定
@@ -32,28 +36,30 @@ class WsTokenComponent extends BaseCoreComponent
      */
     public function setBind($fd)
     {
-        //Client数据
-        $token     = get_header_val(WsKeys::HEADER_TOKEN, '');
-        $accountId = get_header_val(WsKeys::HEADER_ACCOUNT_ID, 0);
-
-        //serverFd
-        $serverFd = $this->getServerFd($fd);
-
-        //serverFd主绑定数据(Close时需要使用)
-        $sfdBindKey  = $this->getSfdBindKey($serverFd);
-        $sfdBindData = [
-            'accountId' => $accountId,
-            'token'     => $token,
+        //标准身份(握手写入的头);自定义维度由业务 strategy 在 bindDimensions 内自行补充(可读各自的头)
+        $identity = [
+            'account_id' => get_header_val(WsKeys::HEADER_ACCOUNT_ID, 0),
+            'token'      => get_header_val(WsKeys::HEADER_TOKEN, ''),
         ];
-        $this->redis->set($sfdBindKey, array_to_json($sfdBindData), WsKeys::BIND_CACHE_TIME);
+        $dims        = $this->bindStrategy->bindDimensions((int) $fd, $identity); // dim => value
+        $addressable = $this->bindStrategy->addressableDimensions();              // [dim, ...]
 
-        //accountId主绑定token=>serverFd列表
-        $accountIdBindKey = $this->getAccountIdBindKey($accountId);
-        $this->redis->hSet($accountIdBindKey, $token, array_to_json($serverFd));
-        //过期时间与用户数据缓存一致
-        $this->redis->expire($accountIdBindKey, WsKeys::BIND_CACHE_TIME);
+        $serverFd    = $this->getServerFd($fd);
+        $serverFdStr = $this->serverFdField($serverFd);
 
-        //var_dump('setBind', $sfdBindKey, $sfdBindData, $accountIdBindKey, $serverFd);
+        //正向:serverFd 主绑定 => 完整维度(Close 时据此反删各反向索引)
+        $this->redis->set($this->getSfdBindKey($serverFd), array_to_json($dims), WsKeys::BIND_CACHE_TIME);
+
+        //反向:每个可寻址维度建一份索引, field=sv:fd(每连接唯一,杜绝同 token 覆盖)
+        foreach ($addressable as $dim) {
+            if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                continue;
+            }
+            $dimKey = WsKeys::bindDimKey($dim, $dims[$dim]);
+            $this->redis->hSet($dimKey, $serverFdStr, array_to_json($serverFd));
+            //过期时间与用户数据缓存一致
+            $this->redis->expire($dimKey, WsKeys::BIND_CACHE_TIME);
+        }
     }
 
     /**
@@ -62,19 +68,19 @@ class WsTokenComponent extends BaseCoreComponent
      */
     public function refreshBind($fd)
     {
-        //serverFd主绑定数据
         $serverFd   = $this->getServerFd($fd);
         $sfdBindKey = $this->getSfdBindKey($serverFd);
-        //刷新过期时间
+        //据主绑定里的维度,刷新主绑定 + 各可寻址反向索引
+        $dims = json_to_array($this->redis->get($sfdBindKey));
         $this->redis->expire($sfdBindKey, WsKeys::BIND_CACHE_TIME);
-
-        //accountId主绑定token=>serverFd列表
-        $accountId        = get_header_val(WsKeys::HEADER_ACCOUNT_ID, 0);
-        $accountIdBindKey = $this->getAccountIdBindKey($accountId);
-        //刷新过期时间
-        $this->redis->expire($accountIdBindKey, WsKeys::BIND_CACHE_TIME);
-
-        //var_dump('refreshBind', $sfdBindKey, $accountIdBindKey);
+        if (!empty($dims)) {
+            foreach ($this->bindStrategy->addressableDimensions() as $dim) {
+                if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                    continue;
+                }
+                $this->redis->expire(WsKeys::bindDimKey($dim, $dims[$dim]), WsKeys::BIND_CACHE_TIME);
+            }
+        }
     }
 
     /**
@@ -83,43 +89,61 @@ class WsTokenComponent extends BaseCoreComponent
      */
     public function unBind($fd)
     {
-        $serverFd   = $this->getServerFd($fd);
-        $sfdBindKey = $this->getSfdBindKey($serverFd);
-        //获取serverFd主绑定数据
-        $sfdBind = $this->redis->get($sfdBindKey);
-        $sfdBind = json_to_array($sfdBind);
-        if (!empty($sfdBind)) {
-            //删除accountId主绑定；当前token
-            $accountIdBindKey = $this->getAccountIdBindKey($sfdBind['accountId'] ?? 0);
-            $this->redis->hDel($accountIdBindKey, $sfdBind['token'] ?? '');
+        $serverFd    = $this->getServerFd($fd);
+        $serverFdStr = $this->serverFdField($serverFd);
+        $sfdBindKey  = $this->getSfdBindKey($serverFd);
+        //取主绑定的维度,反删每个可寻址反向索引(field=sv:fd)
+        $dims = json_to_array($this->redis->get($sfdBindKey));
+        if (!empty($dims)) {
+            foreach ($this->bindStrategy->addressableDimensions() as $dim) {
+                if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                    continue;
+                }
+                $this->redis->hDel(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
+            }
         }
         //删除serverFd主绑定数据
         $this->redis->del($sfdBindKey);
     }
 
     /**
-     * accountId主绑定token=>serverFd列表
+     * 按维度取反向索引：field(sv:fd) => json(serverFd)
+     * @param string $dim
+     * @param mixed $value
+     * @return array
+     */
+    public function getDimBind($dim, $value)
+    {
+        $data = $this->redis->hGetAll(WsKeys::bindDimKey($dim, $value));
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * 删除某维度反向索引里的一个连接项（field=sv:fd）
+     * @return int
+     */
+    public function delDimBind($dim, $value, $field)
+    {
+        return $this->redis->hDel(WsKeys::bindDimKey($dim, $value), $field);
+    }
+
+    /**
+     * account_id 维度反向索引（BC 包装）
      * @param $accountId
      * @return array
      */
     public function getAccountIdBind($accountId)
     {
-        //ws绑定数据
-        $accountIdBindKey = $this->getAccountIdBindKey($accountId);
-        $data             = $this->redis->hGetAll($accountIdBindKey);
-        $data             = is_array($data) ? $data : [];
-        return $data;
+        return $this->getDimBind('account_id', $accountId);
     }
 
     /**
-     * 删除accountId主绑定token=>serverFd列表项
-     * @param $accountId
+     * 删除 account_id 维度反向索引项（BC 包装；$field 为 sv:fd）
      * @return int
      */
-    public function delAccountIdBind($accountId, $token)
+    public function delAccountIdBind($accountId, $field)
     {
-        $accountIdBindKey = $this->getAccountIdBindKey($accountId);
-        return $this->redis->hDel($accountIdBindKey, $token);
+        return $this->delDimBind('account_id', $accountId, $field);
     }
 
     public function getServerFd($fd)
@@ -130,13 +154,16 @@ class WsTokenComponent extends BaseCoreComponent
         return $serverFd;
     }
 
+    /**
+     * 反向索引里标识一个连接的唯一 field：sv:fd
+     */
+    private function serverFdField(array $serverFd): string
+    {
+        return $serverFd['sv'] . ':' . $serverFd['fd'];
+    }
+
     private function getSfdBindKey(array $serverFd)
     {
         return WsKeys::bindSfdKey($serverFd['sv'], $serverFd['fd']);
-    }
-
-    private function getAccountIdBindKey($accountId)
-    {
-        return WsKeys::bindDimKey('account_id', $accountId);
     }
 }

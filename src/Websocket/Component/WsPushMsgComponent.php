@@ -211,7 +211,7 @@ class WsPushMsgComponent extends BaseCoreComponent
     }
 
     /**
-     * 给指定uid的用户发送消息
+     * 给指定uid的用户发送消息（account_id 维度寻址；pushToDimMessage 的 BC 包装）
      * @param $uid int 对应人员的uid
      * @param $cmd
      * @param $message
@@ -221,9 +221,24 @@ class WsPushMsgComponent extends BaseCoreComponent
      */
     public function pushToUidMessage($uid, $cmd, $message, $delay = 0, $uidBinds = null)
     {
-        if (empty($uidBinds)) {
-            $uidBinds = get_inject_obj(WsTokenComponent::class)->getAccountIdBind($uid);
-            if (empty($uidBinds)) {
+        return $this->pushToDimMessage('account_id', $uid, $cmd, $message, $delay, $uidBinds);
+    }
+
+    /**
+     * 按绑定维度寻址下发（维度由 WsBindStrategy 定义，如 account_id / device 等）。
+     * @param string $dim   维度名（须在 strategy->addressableDimensions() 内、setBind 建过反向索引）
+     * @param mixed $value  维度值
+     * @param $cmd
+     * @param $message
+     * @param int $delay
+     * @param array|null $binds 反向索引(可外部预取传入); 不传则按 (dim,value) 取
+     * @return bool
+     */
+    public function pushToDimMessage($dim, $value, $cmd, $message, $delay = 0, $binds = null)
+    {
+        if (empty($binds)) {
+            $binds = get_inject_obj(WsTokenComponent::class)->getDimBind($dim, $value);
+            if (empty($binds)) {
                 return false;
             }
         }
@@ -231,17 +246,17 @@ class WsPushMsgComponent extends BaseCoreComponent
         $servers = get_inject_obj(WsServerComponent::class)->getServerList();
 
         $ret = [];
-        foreach ($uidBinds as $token => $token2Fd) {
-            $token2Fd = json_to_array($token2Fd);
-            if (!in_array($token2Fd['sv'], $servers)) {
-                //记录关系已过期无效,删除指定token关系
-                get_inject_obj(WsTokenComponent::class)->delAccountIdBind($uid, $token);
+        foreach ($binds as $field => $serverFdJson) {
+            $serverFd = json_to_array($serverFdJson);
+            if (!in_array($serverFd['sv'], $servers)) {
+                //记录关系已过期无效,删除该连接项(field=sv:fd)
+                get_inject_obj(WsTokenComponent::class)->delDimBind($dim, $value, $field);
                 continue;
             }
-            $message = $this->formatMessage($cmd, $message, $token2Fd['fd']);
+            $msg = $this->formatMessage($cmd, $message, $serverFd['fd']);
             //分发到对应服务器的消息队列
-            $job = new PushMessageJob($cmd, $message);
-            $job->setQueue(self::getQueue($token2Fd['sv']));
+            $job = new PushMessageJob($cmd, $msg);
+            $job->setQueue(self::getQueue($serverFd['sv']));
             $ret[] = AsyncQueue::push($job, $delay);
         }
 
