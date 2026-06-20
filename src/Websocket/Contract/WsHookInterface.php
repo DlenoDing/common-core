@@ -17,8 +17,9 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 interface WsHookInterface
 {
-    // —— 握手（AbstractWsAuthMiddleware 内）——
-    public function beforeHandshake(ServerRequestInterface $request): void;        // 取 token/鉴权之前；抛异常=拒绝握手
+    // —— 握手（WebSocketAuthMiddleware 内，依次 before → on → after）——
+    public function beforeHandshake(ServerRequestInterface $request): void;        // 鉴权之前：风控/灰度；抛异常=拒绝握手
+    public function onHandshake(ServerRequestInterface $request): ServerRequestInterface; // 中置：业务身份解析(读 token→身份)、可改 header、WsIdentity::set 完整身份；抛异常=拒绝握手；返回(可能改过的)request
     public function afterHandshake(ServerRequestInterface $request, array $identity): void; // 身份解析+写 Context 之后
 
     // —— open（WsOpen，onOpen 协程内）——

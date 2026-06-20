@@ -35,6 +35,13 @@ class CompositeWsHook extends AbstractWsHook
         foreach ($this->hooks as $h) { $h->beforeHandshake($request); }
     }
 
+    public function onHandshake(ServerRequestInterface $request): ServerRequestInterface
+    {
+        //链式：前一个的(改过的)request 传给后一个；任一抛异常=拒绝握手
+        foreach ($this->hooks as $h) { $request = $h->onHandshake($request); }
+        return $request;
+    }
+
     public function afterHandshake(ServerRequestInterface $request, array $identity): void
     {
         foreach ($this->hooks as $h) { $h->afterHandshake($request, $identity); }

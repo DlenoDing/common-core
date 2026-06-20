@@ -16,6 +16,7 @@ use Psr\Http\Message\ServerRequestInterface;
 class AbstractWsHook implements WsHookInterface
 {
     public function beforeHandshake(ServerRequestInterface $request): void {}
+    public function onHandshake(ServerRequestInterface $request): ServerRequestInterface { return $request; }
     public function afterHandshake(ServerRequestInterface $request, array $identity): void {}
 
     public function beforeOpen($server, $request): void {}
