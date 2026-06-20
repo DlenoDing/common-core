@@ -100,6 +100,9 @@ class WsTokenComponent extends BaseCoreComponent
             $this->redis->rawCommand('HEXPIRE', $full, WsKeys::BIND_CACHE_TIME, 'FIELDS', 1, $field);
         } else {
             $this->redis->expire($dimKey, WsKeys::BIND_CACHE_TIME);
+            //<7.4：把本反向索引 key 登记进注册表,供 WsBindSweeper 只遍历真实索引(不全库 SCAN)。
+            //SADD 幂等;7.4+ 走上面分支不登记,注册表保持空、清扫也不跑。
+            $this->redis->sAdd(WsKeys::bindIndexKey(), $dimKey);
         }
     }
 

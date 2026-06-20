@@ -74,6 +74,15 @@ class WsKeys
         return self::prefix() . self::SUFFIX_BIND_DIM . $dim . ':' . $value;
     }
 
+    /**
+     * 反向索引注册表 key（SET，成员=各反向索引的逻辑 key）。
+     * 仅 Redis < 7.4 维护：setBind 登记、WsBindSweeper 只遍历它(不全库 SCAN)。
+     */
+    public static function bindIndexKey(): string
+    {
+        return self::prefix() . 'bind:index';
+    }
+
     public static function queueName(string $serverKey): string
     {
         return self::prefix() . self::SUFFIX_QUEUE . $serverKey;
