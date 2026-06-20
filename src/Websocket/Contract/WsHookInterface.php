@@ -9,7 +9,7 @@ use Psr\Http\Message\ServerRequestInterface;
 /**
  * WS 生命周期钩子（可控注入点）。
  * 握手 / open / close / heartbeat / message 各留前置+后置，message 多一个"发送前"。
- * 默认 AbstractWsHook 全 no-op；业务继承覆盖需要的方法并经 DI 注入；多关注点用 CompositeWsHook 组合。
+ * 默认 AbstractWsHook 全 no-op；业务继承覆盖需要的方法并经 DI 注入；需要多关注点拆分时由业务侧自行组合实现。
  * 钩子是"副作用注入点"，改不到协议/路由；前置钩子可抛异常以受控否决。
  *
  * 类型说明：$server=Swoole WS Server；$request(open)=Swoole\Http\Request；$frame=Swoole\WebSocket\Frame；
