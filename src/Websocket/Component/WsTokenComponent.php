@@ -167,25 +167,6 @@ class WsTokenComponent extends BaseCoreComponent
         return $this->redis->hDel(WsKeys::bindDimKey($dim, $value), $field);
     }
 
-    /**
-     * account_id 维度反向索引（getDimBind 的 account_id 便捷包装）
-     * @param $accountId
-     * @return array
-     */
-    public function getAccountIdBind($accountId)
-    {
-        return $this->getDimBind('account_id', $accountId);
-    }
-
-    /**
-     * 删除 account_id 维度反向索引项（delDimBind 的 account_id 便捷包装；$field 为 sv:fd）
-     * @return int
-     */
-    public function delAccountIdBind($accountId, $field)
-    {
-        return $this->delDimBind('account_id', $accountId, $field);
-    }
-
     public function getServerFd($fd)
     {
         $serverFd       = [];

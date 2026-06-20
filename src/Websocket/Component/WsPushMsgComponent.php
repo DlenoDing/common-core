@@ -22,9 +22,11 @@ use function Hyperf\Support\env;
  * WS 消息推送/在线检查/关闭 编排器（纯基建）。
  *
  * - send/close：本机 Sender 直推/断连（压缩开关读 env，无法走配置中心）
- * - pushPubMessage / pushToUidMessage：按"全体 / 按 account_id"分发 PushMessageJob 到各 server 的 per-IP 队列
- * - checkClientOnline：派 CheckOnlineJob 到目标 server 队列 + 轮询 check key 聚合在线判定
+ * - pushPubMessage：广播；pushToDimMessage：按业务维度(WsBindStrategy)反向索引定向，分发 PushMessageJob 到各 server 的 per-IP 队列
+ * - checkOnlineByDim：派 CheckOnlineJob 到目标 server 队列 + 轮询 check key 聚合在线判定
  * - closeClient：派 CloseMessageJob
+ *
+ * 维度名(account_id / device …)一律由调用方(业务)传入，本组件不绑定任何具体维度。
  *
  * 队列名/在线检查 key 全部走 WsKeys（ws:queue:message:/ws:check:online:）。
  * 出站协议封套 {m:cmd, d:data} 在 PushMessageJob 内构造并锁死（归包，业务改不到）；
@@ -67,28 +69,34 @@ class WsPushMsgComponent extends BaseCoreComponent
         $this->sender->disconnect(intval($fd));
     }
 
-    public function checkClientOnline(array $uids, int $concurrent = 100)
+    /**
+     * 按绑定维度批量在线检查（维度由业务 WsBindStrategy 定义，须在 addressableDimensions() 内）。
+     * @param string $dim    维度名（如 account_id / device）
+     * @param array  $values 维度值列表
+     * @return array value => bool（任一连接在线即 true）
+     */
+    public function checkOnlineByDim(string $dim, array $values, int $concurrent = 100)
     {
         $wssCpt   = get_inject_obj(WsServerComponent::class);
         $wstkCpt  = get_inject_obj(WsTokenComponent::class);
         $servers  = $wssCpt->getServerList();
         $parallel = new Parallel($concurrent);
-        foreach ($uids as $uid) {
+        foreach ($values as $value) {
             $parallel->add(
-                function () use ($wstkCpt, $servers, $uid) {
-                    $uidBinds = $wstkCpt->getAccountIdBind($uid);
-                    if (empty($uidBinds)) {
+                function () use ($wstkCpt, $servers, $dim, $value) {
+                    $valueBinds = $wstkCpt->getDimBind($dim, $value);
+                    if (empty($valueBinds)) {
                         return false;
                     }
-                    //按服务器聚合该用户的全部 fd(同一服务器的多设备合并为一个批量任务)
+                    //按服务器聚合该维度值的全部 fd(同一服务器的多连接合并为一个批量任务)
                     $svFds = [];//sv => [fd, ...]
                     $polls = [];//[ ['sv'=>, 'fd'=>], ... ]
-                    foreach ($uidBinds as $token => $token2Fd) {
-                        $token2Fd = json_to_array($token2Fd);
-                        $sv = $token2Fd['sv'];
-                        $fd = $token2Fd['fd'];
+                    foreach ($valueBinds as $field => $serverFdJson) {
+                        $serverFd = json_to_array($serverFdJson);
+                        $sv = $serverFd['sv'];
+                        $fd = $serverFd['fd'];
                         if (!in_array($sv, $servers)) {
-                            $wstkCpt->delAccountIdBind($uid, $token);//对应服务器已无效,删除指定token关系
+                            $wstkCpt->delDimBind($dim, $value, $field);//对应服务器已无效,删除该连接项(field=sv:fd)
                             continue;
                         }
                         $svFds[$sv][] = $fd;
@@ -136,7 +144,7 @@ class WsPushMsgComponent extends BaseCoreComponent
                         return false;
                     }
                 },
-                $uid
+                $value
             );
         }
 
@@ -210,20 +218,6 @@ class WsPushMsgComponent extends BaseCoreComponent
             return false;
         }
         return true;
-    }
-
-    /**
-     * 给指定uid的用户发送消息（account_id 维度寻址；pushToDimMessage 的 BC 包装）
-     * @param $uid int 对应人员的uid
-     * @param $cmd
-     * @param $message
-     * @param int $delay
-     * @param array $uidBinds
-     * @return bool
-     */
-    public function pushToUidMessage($uid, $cmd, $message, $delay = 0, $uidBinds = null)
-    {
-        return $this->pushToDimMessage('account_id', $uid, $cmd, $message, $delay, $uidBinds);
     }
 
     /**
