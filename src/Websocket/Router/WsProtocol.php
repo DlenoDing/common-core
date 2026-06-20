@@ -43,6 +43,13 @@ class WsProtocol
             return false;
         }
 
+        //action 字符白名单：仅允许 词字符段 用点分隔(如 test.test.index)，且至少 2 段(ctrl.method)。
+        //拒绝含 反斜杠/斜杠/空段/空白 的 action —— 这些会让 parseAction 拼出的类名脱离
+        //getControllerNamespace() 锁定的 App\WebSocket\Controller\ 之下(命名空间锁加固),静默丢弃。
+        if (!preg_match('/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$/', $data['action'])) {
+            return false;
+        }
+
         $data['params'] = $data['params'] ?? [];
         if (!is_array($data['params'])) {
             $data['params'] = [];

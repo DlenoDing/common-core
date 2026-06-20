@@ -18,14 +18,22 @@ class WsRedisCap
     private static ?bool $hExpire = null;
 
     /**
-     * 本 redis(服务端+客户端组合)是否支持 HEXPIRE。每 worker 进程探一次后缓存。
+     * 本 redis(服务端+客户端组合)是否支持 HEXPIRE。
+     * **只缓存"确定支持"(true)**：一旦探到支持就钉死、后续零探测；探到"不支持/瞬时失败"则不缓存、下次再探。
+     * 理由:probe 走网络,若某次恰逢连接抖动/超时返回 false,缓存 false 会把整个 worker 永久打到 <7.4 慢路径
+     * (整-key expire + 注册表 + 清扫),与其它 worker 行为分裂、还会触发活 field 被误续命的风险。
+     * 代价:真 <7.4 环境下每次 setBind 多一条 probe(慢路径本就是兜底,可接受),且能在 redis 升级到 7.4 后自动切到快路径。
      */
     public static function supportsHExpire(Redis $redis): bool
     {
-        if (self::$hExpire === null) {
-            self::$hExpire = self::probe($redis);
+        if (self::$hExpire === true) {
+            return true;
         }
-        return self::$hExpire;
+        $ok = self::probe($redis);
+        if ($ok) {
+            self::$hExpire = true;
+        }
+        return $ok;
     }
 
     private static function probe(Redis $redis): bool

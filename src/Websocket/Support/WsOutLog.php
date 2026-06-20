@@ -63,7 +63,8 @@ class WsOutLog
                 }
 
                 $server = config('app_name') . '(' . Server::getIpAddr() . ')';
-                if ($reqId) {
+                //用 has() 判定是否走过消息路由(decode 设过 reqId),而非 if($reqId)——后者对合法的 reqId='0'/0 会误判为 false 落到 path 分支。
+                if (Context::has(RequestConf::REQUEST_REQ_ID)) {
                     $mca     = Server::getRouteMca();
                     $service = join('\\', $mca['module']) . '\\' . $mca['ctrl'] . '->' . $mca['action'];
                 } else {
