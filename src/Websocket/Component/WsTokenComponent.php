@@ -18,9 +18,9 @@ use Hyperf\Redis\Redis;
  *   - 反向 索引   <prefix>bind:<dim>:<value> (hash) field=<sv:fd> => json(serverFd)
  *                 对 strategy->addressableDimensions() 里每个维度各建一份，可按维度寻址下发。
  *
- * 反向索引 field 用 "sv:fd"（每连接唯一），同账号多连接(即便同 token)互不覆盖。
- * 默认 DefaultWsBindStrategy = account_id + token，按 account_id 可寻址（单端现状）。
- * 业务侧用空子类 extends；需要多端/设备维度时实现 WsBindStrategyInterface 并在 dependencies.php 覆盖绑定。
+ * 反向索引 field 用 "sv:fd"（每连接唯一），同账号多连接互不覆盖。
+ * 绑定策略无包内默认：业务必须在 dependencies.php 绑定 WsBindStrategyInterface（脚手架自带默认实现
+ * App\WebSocket\Bind\DefaultWsBindStrategy = 只绑 account_id；需要多端/设备维度时改成自己的实现）。
  */
 class WsTokenComponent extends BaseCoreComponent
 {
