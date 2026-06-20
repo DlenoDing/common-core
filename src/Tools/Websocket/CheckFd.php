@@ -2,12 +2,9 @@
 
 namespace Dleno\CommonCore\Tools\Websocket;
 
-use Hyperf\WebSocketServer\Sender;
 use Dleno\CommonCore\PipeMessage\Websocket\FdCheckPipeMessage;
 use Swoole\Coroutine\Channel;
 use Swoole\Server;
-
-use function Hyperf\Config\config;
 
 class CheckFd
 {
@@ -48,10 +45,9 @@ class CheckFd
     private static $ridSeq = 0;
 
     /**
-     * 进程级缓存：Swoole Server 单例与运行模式(进程生命周期内不变)。
+     * 进程级缓存：Swoole Server 单例(进程生命周期内不变)。
      */
     private static $server = null;
-    private static $serverMode = null;
 
     /**
      * 检查 fd 是否为活跃连接。支持单个 / 多个 / 全量。返回统一为 [fd => true|false|null]。
@@ -81,10 +77,8 @@ class CheckFd
             }
         }
 
-        if (self::serverMode() == SWOOLE_BASE) {
-            return self::queryBase($isAll, $candidates);
-        }
-        return self::queryProcess($isAll, $candidates);
+        //WS 服务强制 SWOOLE_BASE(启动前置校验 WsServerModeCheckListener 已拦截非 BASE)
+        return self::queryBase($isAll, $candidates);
     }
 
     /**
@@ -219,27 +213,6 @@ class CheckFd
     }
 
     /**
-     * SWOOLE_PROCESS：master 统一路由(全量视图,结果确定,无 null)。
-     * @return array [fd => true|false]（list）或 [fd => true]（all）
-     */
-    private static function queryProcess(bool $isAll, array $candidates): array
-    {
-        $status = [];
-        if ($isAll) {
-            //PROCESS 模式连接表共享，getClientList 可枚举全部连接
-            foreach (self::localActives(self::server()) as $fd) {
-                $status[$fd] = true;
-            }
-            return $status;
-        }
-        $sender = get_inject_obj(Sender::class);
-        foreach ($candidates as $fd) {
-            $status[$fd] = (bool)$sender->check($fd);
-        }
-        return $status;
-    }
-
-    /**
      * 收到回包：投递给对应批次的等待协程。
      * 由 OnPipeMessageListener 在 TYPE_CHECK_RETURN 时调用。
      * @param FdCheckPipeMessage $reply
@@ -343,16 +316,5 @@ class CheckFd
             self::$server = get_inject_obj(Server::class);
         }
         return self::$server;
-    }
-
-    /**
-     * 进程级缓存的运行模式(SWOOLE_BASE / SWOOLE_PROCESS)，运行期不变。
-     */
-    private static function serverMode()
-    {
-        if (self::$serverMode === null) {
-            self::$serverMode = config('server.mode');
-        }
-        return self::$serverMode;
     }
 }

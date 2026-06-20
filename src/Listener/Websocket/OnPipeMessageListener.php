@@ -52,8 +52,7 @@ class OnPipeMessageListener implements ListenerInterface
             //仅事件 worker 处理（OnPipeMessage 含 $event->server）；自定义进程收到则空转
             if (property_exists($event, 'server') && $event->server !== null) {
                 try {
-                    //WsBroadcastPipeMessage 仅 BASE 下投递给事件 worker → 用进程内 fd 集合(Tier 2+)
-                    WsBroadcast::pushLocal($event->server, $event->data, true);
+                    WsBroadcast::pushLocal($event->server, $event->data);
                 } catch (\Throwable $e) {
                     $this->logger->warning($e->getMessage());
                 }
