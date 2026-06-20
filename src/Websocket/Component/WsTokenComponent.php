@@ -21,7 +21,7 @@ use Hyperf\Redis\Redis;
  *                 对 strategy->addressableDimensions() 里每个维度各建一份，可按维度寻址下发。
  *
  * 反向索引 field 用 "sv:fd"（每连接唯一），同账号多连接互不覆盖。
- * 绑定策略无包内默认：业务必须在 dependencies.php 绑定 WsBindStrategyInterface（脚手架自带默认实现
+ * 绑定策略无包内默认：业务必须在 dependencies.php 绑定 WsBindStrategyInterface（业务侧默认实现
  * App\WebSocket\Bind\DefaultWsBindStrategy = 只绑 account_id；需要多端/设备维度时改成自己的实现）。
  */
 class WsTokenComponent extends BaseCoreComponent
@@ -38,8 +38,8 @@ class WsTokenComponent extends BaseCoreComponent
      */
     public function setBind($fd)
     {
-        //完整身份(握手时鉴权侧 WsIdentity::set 存入 = resolveByToken 的返回 + token)→ strategy 可据此定义任意维度。
-        //无身份(鉴权侧未 WsIdentity::set,如握手未通过/未接入)→ 不绑,避免写出无意义/残缺的绑定。
+        //完整身份(握手中间件经 WsIdentity::set 存入 = 钩子返回的账户字段 + token)→ strategy 可据此定义任意维度。
+        //无身份(中间件未 set,如握手未通过/未接入)→ 不绑,避免写出无意义/残缺的绑定。
         $identity = WsIdentity::get();
         if (empty($identity)) {
             return;
@@ -101,10 +101,10 @@ class WsTokenComponent extends BaseCoreComponent
 
     /**
      * 给反向索引续期。
-     * - Redis 7.4+：HEXPIRE 下"每 field 独立 TTL"——死连接(无 onClose)的 field 60s 后独立过期,
-     *   不再被同维度其他活跃连接的整-hash 续命所拖住,根治 stale field 残留;hash 全空后 Redis 自动删。
-     * - 7.4 以下：回落到整 hash key 级 EXPIRE(旧行为);残留由 WsBindSweeper 低频清扫兜底。
-     * 注意：HEXPIRE 分支【不】再下 key 级 expire——否则 key 级 TTL 一触发会把刚续过的活 field 一起删。
+     * - Redis 7.4+：HEXPIRE 给"每 field 独立 TTL"——死连接(无 onClose)的 field 60s 后独立过期,
+     *   不受同维度其他活跃连接续命影响,hash 全空后 Redis 自动删。
+     * - 7.4 以下：整 hash key 级 EXPIRE + 注册表登记,残留 field 由 WsBindSweeper 低频清扫兜底。
+     * 注意：HEXPIRE 分支【不】下 key 级 expire——否则 key 级 TTL 一触发会把刚续过的活 field 一起删。
      */
     private function expireDimTtl(string $dimKey, string $field): void
     {
@@ -168,7 +168,7 @@ class WsTokenComponent extends BaseCoreComponent
     }
 
     /**
-     * account_id 维度反向索引（BC 包装）
+     * account_id 维度反向索引（getDimBind 的 account_id 便捷包装）
      * @param $accountId
      * @return array
      */
@@ -178,7 +178,7 @@ class WsTokenComponent extends BaseCoreComponent
     }
 
     /**
-     * 删除 account_id 维度反向索引项（BC 包装；$field 为 sv:fd）
+     * 删除 account_id 维度反向索引项（delDimBind 的 account_id 便捷包装；$field 为 sv:fd）
      * @return int
      */
     public function delAccountIdBind($accountId, $field)

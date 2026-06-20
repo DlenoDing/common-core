@@ -13,7 +13,7 @@ use Dleno\CommonCore\Websocket\Component\WsServerComponent;
 use Hyperf\Redis\Redis;
 
 /**
- * 在线检查 Job（纯基建，下沉自脚手架）。
+ * 在线检查 Job（WS 在线判定）。
  * 在目标 server 队列内对 fd 批量核验（CheckFd 三态 true/false/null，null 不写、交超时重试），
  * 命中结果写 ws:check:online:<sv>:<fd>（TTL 5s），由 WsPushMsgComponent::checkClientOnline 轮询聚合。
  */

@@ -9,7 +9,7 @@ use function Hyperf\Config\config;
 /**
  * WS 全部 Redis key / 队列命名集中地（生产/消费/清理/Job 四处共用）。
  *
- * 统一前缀可配置：config('websocket.key_prefix')，默认 'ws:'（与历史逐字节一致，BC）。
+ * 统一前缀可配置：config('websocket.key_prefix')，默认 'ws:'。
  * 业务若有自己的 'ws:*' 键担心冲突，改这一个配置即可整体换namespace，无需改代码。
  * 前缀之后的"域后缀"(server:list / bind:sfd: 等)固定不可改，保证协议结构稳定。
  *
@@ -29,7 +29,7 @@ class WsKeys
     const SUFFIX_QUEUE       = 'queue:message:';     // per-server 实时消息队列
     const SUFFIX_CHECK       = 'check:online:';      // 在线检查结果
 
-    //时长（秒）—— 与脚手架 WsServerConf 同值（BC）
+    //时长（秒）：服务器注册有效期基数 / 绑定缓存时长
     const SERVER_REG_LIMIT = 30;                     // 服务器注册频率/有效期基数
     const BIND_CACHE_TIME  = 60;                     // 客户端绑定缓存时间
 

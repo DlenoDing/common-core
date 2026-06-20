@@ -28,7 +28,7 @@ use function Hyperf\Config\config;
  *  - onHandshake($request): WsHandshakeResult  **中置**：业务身份解析（读 token→身份）、可改 header；抛异常=拒绝握手。
  *                                              只返回 (改过的)request + 完整身份；**WsIdentity::set 由本中间件统一执行**
  *                                              （供 setBind→bindDimensions）—— 业务不写这步、也不会漏写而致绑定链静默失效。
- *                                              —— 这一段取代了原来的 WsIdentityResolver；业务在 AppWsHook::onHandshake 里实现。
+ *                                              业务在 AppWsHook::onHandshake 里实现。
  *  - afterHandshake($request, $identity)       身份已 set + Context 已写之后：埋点/presence 准备等。
  *
  * 接入：app 的 config/autoload/middlewares.php 的 ws 段引用本类即可，无需在项目里再建握手中间件。

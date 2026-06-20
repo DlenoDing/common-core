@@ -19,14 +19,14 @@ use function Hyperf\Coroutine\wait;
 use function Hyperf\Support\env;
 
 /**
- * WS 消息推送/在线检查/关闭 编排器（纯基建，下沉自脚手架）。
+ * WS 消息推送/在线检查/关闭 编排器（纯基建）。
  *
  * - send/close：本机 Sender 直推/断连（压缩开关读 env，无法走配置中心）
  * - pushPubMessage / pushToUidMessage：按"全体 / 按 account_id"分发 PushMessageJob 到各 server 的 per-IP 队列
  * - checkClientOnline：派 CheckOnlineJob 到目标 server 队列 + 轮询 check key 聚合在线判定
  * - closeClient：派 CloseMessageJob
  *
- * 队列名/在线检查 key 全部走 WsKeys（字节级兼容脚手架 ws:queue:message:/ws:check:online:）。
+ * 队列名/在线检查 key 全部走 WsKeys（ws:queue:message:/ws:check:online:）。
  * 出站协议封套 {m:cmd, d:data} 在 PushMessageJob 内构造并锁死（归包，业务改不到）；
  * cmd 取值由业务自定义。业务侧用空子类 extends 之即可。
  */
@@ -197,8 +197,8 @@ class WsPushMsgComponent extends BaseCoreComponent
         foreach ($servers as $server) {
             //每台一份独立副本:nfd(不推送的FD)只对其所在服务器有效,不能串到其它服务器的 Job(否则误排除无关连接)
             $msg = $message;
-            if (($nsfd['sv'] ?? '') == $server) {//不推送的FD,必须与所在服务器对应
-                $msg['nfd'] = $nsfd['fd'] ?? 0;
+            if (($nsfd['sv'] ?? '') == $server) {//不推送的FD,必须与所在服务器对应(sv 须为 getServerKey 归一化后的值)
+                $msg['nfd'] = (int) ($nsfd['fd'] ?? 0);
             }
             //分发到对应服务器的消息队列
             $job = new PushMessageJob($cmd, $msg);
@@ -270,8 +270,8 @@ class WsPushMsgComponent extends BaseCoreComponent
 
     private function formatMessage($cmd, $message, $fd = 0)
     {
-        //指定连接:>0 由 PushMessageJob 走本机定向 Sender;0(默认/广播)走 WsBroadcast::toAll。
-        //必须写入——否则定向推送(pushToDimMessage/pushToUidMessage)的目标 fd 丢失、Job 误判为广播。
+        //指定目标连接:>0 由 PushMessageJob 走本机定向 Sender;0(广播)走 WsBroadcast::toAll。
+        //必须写入:Job 据 message['fd'] 区分定向/广播,缺省即按广播处理。
         $message['fd'] = (int) $fd;
         return $message;
     }

@@ -11,7 +11,7 @@ use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
 use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 
 /**
- * 推送消息 Job（纯基建，下沉自脚手架）。
+ * 推送消息 Job（WS 出站投递）。
  * 出站封套 {m:cmd, d:data} 在 parseCmdMessage 锁死（协议归包）。
  * 无 fd → WsBroadcast::toAll 本机全员广播；有 fd → 本机定向 Sender。
  */
@@ -47,8 +47,7 @@ class PushMessageJob extends BaseJob
         $pmCpt   = get_inject_obj(WsPushMsgComponent::class);
         $message = $this->parseCmdMessage();
         if (empty($fd)) {
-            //发送给当前服务器的所有人:每事件 worker 一条信号、各自推本地连接
-            //(O(W) IPC,替代原 HSCAN 全量 + 逐 fd 经 Sender 扇出的 O(N×W))
+            //发送给当前服务器的所有人:每事件 worker 一条信号、各自推本地连接(O(W) IPC)
             WsBroadcast::toAll($message, (int)$nfd);
         } else {
             //发送给当前服务器指定的人

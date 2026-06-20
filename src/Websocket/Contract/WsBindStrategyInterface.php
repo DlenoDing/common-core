@@ -12,8 +12,8 @@ namespace Dleno\CommonCore\Websocket\Contract;
  *    由 {@see \Dleno\CommonCore\Websocket\Component\WsTokenComponent} 实现，不可被业务改坏。
  *  - **业务持有维度**：绑哪些维度、哪些可寻址，因项目而异（单端只按 account_id / 多端再分 device 等），由本接口给出。
  *
- * 绑定，**无包内默认实现**：默认实现已下放到业务端（脚手架自带 `App\WebSocket\Bind\DefaultWsBindStrategy` = 只绑 account_id），
- * 业务**必须**在 `config/autoload/dependencies.php` 把本接口绑到某个实现（默认即绑那个自带实现；要多端就绑自己的）。
+ * **无包内默认实现**：业务**必须**在 `config/autoload/dependencies.php` 把本接口绑到某个实现
+ * （脚手架自带 `App\WebSocket\Bind\DefaultWsBindStrategy` = 只绑 account_id；要多端寻址就绑自己的）。
  *
  * 调用时机（均在 WsTokenComponent 内）：
  *  - setBind：用 bindDimensions() 取维度写正向主绑定，并对 addressableDimensions() 的每个维度建反向索引；
@@ -27,9 +27,9 @@ interface WsBindStrategyInterface
      *
      * @param int   $fd       本次连接的 Swoole 文件描述符（连接的本机唯一标识）。一般用不到，
      *                        预留给"维度值需依赖具体连接"的特殊策略。
-     * @param array $identity **WsIdentityResolver::resolveByToken() 的完整返回**（+ token），握手时由鉴权侧存入、setBind 原样传入。
-     *                        含 `account_id`、`token`，以及 resolver 返回的任意业务字段（如 device/client_type/account_type…）。
-     *                        即：自定义策略要按哪个维度绑定，只要让 resolver 返回对应字段，这里就能直接读到（无需再走 header）。
+     * @param array $identity 当前连接的**完整身份**（{@see \Dleno\CommonCore\Websocket\Support\WsIdentity}），握手时由钩子解析、setBind 原样传入。
+     *                        含 `account_id`、`token`，以及业务钩子返回的任意字段（如 device/client_type/account_type…）。
+     *                        即：自定义策略要按哪个维度绑定，只要让握手钩子（AppWsHook::onHandshake）把对应字段放进身份即可。
      *
      * @return array dimName => dimValue 维度集合。
      *               - dimName：维度名，会成为反向索引 key 的一段（`<prefix>bind:<dimName>:<dimValue>`）；

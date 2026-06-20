@@ -23,7 +23,7 @@ use function Hyperf\Config\config;
  *    即"用完即放"，不长期占用 leader；用新 uuid 避免上一轮续约 Timer 误删本轮锁。拿不到锁=有人在扫，跳过。
  *  - **协程化(在调用方 WsServerProcess)**：放后台协程跑，清扫再慢也不阻塞主循环的服务器注册续约。
  *  - **注册表 SET 遍历(不全库 SCAN)**：setBind 已把各反向索引 key 登记进 WsKeys::bindIndexKey()；这里只 SSCAN 注册表，
- *    复杂度 O(活跃维度数)而非 O(全库)，吞吐与频率不再敏感；顺手 SREM 掉已空/不存在的反向索引。
+ *    复杂度 O(活跃维度数)而非 O(全库)，吞吐高、对频率不敏感；顺手 SREM 掉已空/不存在的反向索引。
  *  - **限流**：SSCAN 每批 COUNT，cursor 持久化续扫；且两次扫描最小间隔 SWEEP_INTERVAL。
  *  - **判活**：field=sv:fd，查正向主绑定是否存在(死连接 60s 后正向即无)→ HDEL。
  *  - **best-effort**：异常吞掉，绝不影响注册主循环。

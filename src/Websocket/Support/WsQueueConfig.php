@@ -24,7 +24,7 @@ class WsQueueConfig
     public static function resolve(string $channel): array
     {
         $base = config('async_queue.default', []);
-        //WS 包内封存默认（原消费进程里硬编码的 concurrent.limit=50）
+        //WS 包内默认 concurrent.limit=50（可被 config('websocket.queue') 覆盖）
         $sealed = ['concurrent' => ['limit' => 50]];
         //业务可控覆盖（不需继承，改 config 即可）
         $override = config('websocket.queue', []);

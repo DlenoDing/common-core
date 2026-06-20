@@ -11,7 +11,7 @@ use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 use Dleno\CommonCore\Websocket\Component\WsServerComponent;
 
 /**
- * 关闭连接 Job（纯基建，下沉自脚手架）。
+ * 关闭连接 Job（WS 主动断连）。
  * fds='-1' → 关闭当前 server 全体（枚举注册表）；否则关闭指定 fd 列表。
  */
 class CloseMessageJob extends BaseJob

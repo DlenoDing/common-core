@@ -9,11 +9,11 @@ use Hyperf\WebSocketServer\Context as WsContext;
 /**
  * 当前 WS 连接的「完整身份」载体（per-fd，存活于握手→onOpen→onMessage→onClose 全程）。
  *
- * 解决：WsIdentityResolver::resolveByToken() 返回的是完整身份（account_id + 业务字段，如 account_type/device…），
- * 但握手中间件只把 account_id 写进了 header；若 setBind 仅从 header 重建身份，bindDimensions 就拿不到 resolver 的其它字段，
- * 业务方也就无法据 resolver 返回定义自定义维度。
+ * 存的是业务在握手钩子里解析出的完整身份（account_id + 任意业务字段，如 account_type/device…），
+ * 而非只有 header 里的 account_id —— 这样 setBind 才能把完整身份交给 WsBindStrategy::bindDimensions，
+ * 业务方可据其中任意字段定义绑定维度。
  *
- * 约定：鉴权中间件解析出身份后调 WsIdentity::set($identity)（建议把 token 一并并入）；
+ * 流转：握手中间件取钩子返回的身份调 WsIdentity::set($identity)（已并入 token）；
  * WsTokenComponent::setBind 用 WsIdentity::get() 取完整身份传给 WsBindStrategy::bindDimensions。
  * 存于 WsContext，与该 fd 同生命周期。
  */

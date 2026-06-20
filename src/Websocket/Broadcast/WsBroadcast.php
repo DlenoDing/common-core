@@ -13,11 +13,11 @@ use function Hyperf\Support\env;
 /**
  * WS 广播（向当前服务器全体在线连接推送同一消息）。
  *
- * 设计要点（详见 WS广播优化方案(H8).md）：
+ * 设计要点：
  *  - 不逐 fd 经 Sender 扇出（BASE 下那是 N×(W-1) 条管道写）；
  *  - BASE：给每个事件 worker 投一条信号，由各 worker 用本地 push 推送自己名下连接（O(W) IPC）；
  *  - PROCESS：连接表共享，单进程枚举全量直推（无需 PipeMessage）；
- *  - 复用 CheckFd 的本地活跃 fd 枚举/过滤（已 e2e 验证）。
+ *  - 本地活跃 fd 枚举/过滤复用 CheckFd::localActives。
  */
 class WsBroadcast
 {

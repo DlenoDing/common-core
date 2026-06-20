@@ -12,11 +12,11 @@ use Hyperf\Di\Annotation\Inject;
 use Hyperf\Redis\Redis;
 
 /**
- * WS 服务器/客户端注册表（纯基建，下沉自脚手架）。
+ * WS 服务器/客户端注册表（纯基建）。
  * - 服务器注册/在线列表（跨服可见，按 REG 超时过滤）
  * - 本服务器在线 fd 注册表（Redis，供 CheckOnline/Close 枚举"全体"；与本机实时 FdCollector 双轨并存，职责不同）
  * - 下线服务器队列清理（UNLINK 固定 5 子键，无 KEYS/SCAN）
- * 全部 key/队列命名走 WsKeys（字节级兼容脚手架）。业务侧用空子类 extends 之即可。
+ * 全部 key/队列命名走 WsKeys。业务侧用空子类 extends 之即可。
  */
 class WsServerComponent extends BaseCoreComponent
 {

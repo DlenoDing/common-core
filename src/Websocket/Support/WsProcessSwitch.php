@@ -12,7 +12,7 @@ use function Hyperf\Support\env;
  *
  * 规则：
  *  1) 总开关 env('ENABLE_WS') 关 → 一律不启（非 WS 项目即便注册了进程也不会运行）。
- *  2) local 环境默认不启（保留原 local 判断）；除非显式打开本地开关 config('websocket.local_enable')，
+ *  2) local 环境默认不启；除非显式打开本地开关 config('websocket.local_enable')，
  *     打开后允许本地运行（便于本地联调）。
  *  3) 其余环境 → 启。
  *

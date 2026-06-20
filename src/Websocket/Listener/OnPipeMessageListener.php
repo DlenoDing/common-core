@@ -17,9 +17,8 @@ use Dleno\CommonCore\Websocket\Broadcast\WsBroadcast;
 /**
  * 接收 fd 检查的 PipeMessage（请求/回包）。
  *
- * 通过 #[Listener] 自动注册（无需业务项目在 listeners.php 手动配置）。
+ * 通过 #[Listener] 自动注册（业务项目无需在 listeners.php 手动配置，也不应重复注册）。
  * 非 FdCheckPipeMessage 的管道消息一律空转，WS 关闭时无任何副作用。
- * 注意：业务项目若曾在 config/autoload/listeners.php 手动注册本类，应移除以免重复注册。
  */
 #[Listener]
 class OnPipeMessageListener implements ListenerInterface
