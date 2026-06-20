@@ -24,6 +24,10 @@ class WsKeys
     const SERVER_REG_LIMIT = 30;                     // 服务器注册频率/有效期基数
     const BIND_CACHE_TIME  = 60;                     // 客户端绑定缓存时间
 
+    //握手头名 —— 与脚手架 WsRequestConf 同值（BC）；auth 写入、绑定读取
+    const HEADER_TOKEN      = 'Client-Token';
+    const HEADER_ACCOUNT_ID = 'Client-AccountId';
+
     public static function serverListKey(): string
     {
         return self::SERVER_LIST;
