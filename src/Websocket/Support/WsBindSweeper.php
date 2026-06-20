@@ -8,6 +8,8 @@ use Dleno\CommonCore\Tools\Lock\DcsLock;
 use Hyperf\Redis\Redis;
 use Hyperf\Snowflake\IdGeneratorInterface;
 
+use function Hyperf\Config\config;
+
 /**
  * WS 反向索引 stale field 低频清扫（仅 Redis < 7.4 兜底；7.4+ 由 HEXPIRE 每-field TTL 自洁，不跑）。
  *
@@ -31,10 +33,24 @@ class WsBindSweeper
     const LOCK_KEY        = 'bind:sweep:lock';    // DcsLock 锁 key(逻辑,DcsLock 内部按其 pool 前缀)
     const CURSOR_SUFFIX   = 'bind:sweep:cursor';
     const LOCK_TTL        = 30;                    // 锁安全 TTL(秒);正常由 defer 提前释放,崩溃则最多 30s 后他人接管
-    const SCAN_COUNT      = 500;                   // SSCAN 每批(对注册表 SET,远小于全库)
-    const SWEEP_INTERVAL  = 60;                    // 两次清扫最小间隔(秒)，与注册循环(15s)解耦
+
+    //业务可配(默认值);按业务量在 config/autoload/websocket.php 的 'sweep' 段调
+    const DEFAULT_SCAN_COUNT     = 500;           // SSCAN 每批(对注册表 SET,远小于全库)
+    const DEFAULT_SWEEP_INTERVAL = 60;            // 两次清扫最小间隔(秒)，与注册循环(15s)解耦
 
     private static int $lastSweepAt = 0;
+
+    /** 每批 SSCAN 量(可配 config('websocket.sweep.scan_count')，默认 500) */
+    private static function scanCount(): int
+    {
+        return (int) config('websocket.sweep.scan_count', self::DEFAULT_SCAN_COUNT);
+    }
+
+    /** 两次清扫最小间隔秒数(可配 config('websocket.sweep.interval')，默认 60) */
+    private static function sweepInterval(): int
+    {
+        return (int) config('websocket.sweep.interval', self::DEFAULT_SWEEP_INTERVAL);
+    }
 
     public static function tick(): void
     {
@@ -44,7 +60,7 @@ class WsBindSweeper
                 return; // 7.4+：HEXPIRE 已自洁，无需清扫
             }
             $now = time();
-            if (($now - self::$lastSweepAt) < self::SWEEP_INTERVAL) {
+            if (($now - self::$lastSweepAt) < self::sweepInterval()) {
                 return; // 距上次清扫不足间隔
             }
             //每次执行现拿锁(新 uuid)：拿不到=有人在扫,跳过;拿到则本协程结束时 DcsLock 的 defer 自动释放
@@ -72,7 +88,7 @@ class WsBindSweeper
         //SSCAN 注册表(只遍历真实反向索引)。rawCommand 不走 OPT_PREFIX,index key 手动补全前缀;
         //成员是各反向索引的"逻辑 key",后续用原生方法(自动前缀)操作。
         $indexFull = (string) $redis->getOption(\Redis::OPT_PREFIX) . $indexKey;
-        $res       = $redis->rawCommand('SSCAN', $indexFull, $cursor, 'COUNT', self::SCAN_COUNT);
+        $res       = $redis->rawCommand('SSCAN', $indexFull, $cursor, 'COUNT', self::scanCount());
         if (!is_array($res) || count($res) < 2) {
             return;
         }
