@@ -7,6 +7,7 @@ namespace Dleno\CommonCore\Websocket\Component;
 use Dleno\CommonCore\Base\BaseCoreComponent;
 use Dleno\CommonCore\Websocket\Contract\WsBindStrategyInterface;
 use Dleno\CommonCore\Websocket\Support\WsKeys;
+use Dleno\CommonCore\Websocket\Support\WsRedisCap;
 use Hyperf\Di\Annotation\Inject;
 use Hyperf\Redis\Redis;
 
@@ -57,8 +58,8 @@ class WsTokenComponent extends BaseCoreComponent
             }
             $dimKey = WsKeys::bindDimKey($dim, $dims[$dim]);
             $this->redis->hSet($dimKey, $serverFdStr, array_to_json($serverFd));
-            //过期时间与用户数据缓存一致
-            $this->redis->expire($dimKey, WsKeys::BIND_CACHE_TIME);
+            //过期时间与用户数据缓存一致：7.4+ 下每 field 独立 TTL(死连接 field 自洁)，否则整 hash key TTL
+            $this->expireDimTtl($dimKey, $serverFdStr);
         }
     }
 
@@ -68,8 +69,9 @@ class WsTokenComponent extends BaseCoreComponent
      */
     public function refreshBind($fd)
     {
-        $serverFd   = $this->getServerFd($fd);
-        $sfdBindKey = $this->getSfdBindKey($serverFd);
+        $serverFd    = $this->getServerFd($fd);
+        $serverFdStr = $this->serverFdField($serverFd);
+        $sfdBindKey  = $this->getSfdBindKey($serverFd);
         //据主绑定里的维度,刷新主绑定 + 各可寻址反向索引
         $dims = json_to_array($this->redis->get($sfdBindKey));
         $this->redis->expire($sfdBindKey, WsKeys::BIND_CACHE_TIME);
@@ -78,8 +80,26 @@ class WsTokenComponent extends BaseCoreComponent
                 if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
                     continue;
                 }
-                $this->redis->expire(WsKeys::bindDimKey($dim, $dims[$dim]), WsKeys::BIND_CACHE_TIME);
+                $this->expireDimTtl(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
             }
+        }
+    }
+
+    /**
+     * 给反向索引续期。
+     * - Redis 7.4+：HEXPIRE 下"每 field 独立 TTL"——死连接(无 onClose)的 field 60s 后独立过期,
+     *   不再被同维度其他活跃连接的整-hash 续命所拖住,根治 stale field 残留;hash 全空后 Redis 自动删。
+     * - 7.4 以下：回落到整 hash key 级 EXPIRE(旧行为);残留由 WsBindSweeper 低频清扫兜底。
+     * 注意：HEXPIRE 分支【不】再下 key 级 expire——否则 key 级 TTL 一触发会把刚续过的活 field 一起删。
+     */
+    private function expireDimTtl(string $dimKey, string $field): void
+    {
+        if (WsRedisCap::supportsHExpire($this->redis)) {
+            //rawCommand 不走 OPT_PREFIX,手动补全前缀(phpredis 6.2 也无 hExpire() 方法,统一 rawCommand)
+            $full = (string) $this->redis->getOption(\Redis::OPT_PREFIX) . $dimKey;
+            $this->redis->rawCommand('HEXPIRE', $full, WsKeys::BIND_CACHE_TIME, 'FIELDS', 1, $field);
+        } else {
+            $this->redis->expire($dimKey, WsKeys::BIND_CACHE_TIME);
         }
     }
 
