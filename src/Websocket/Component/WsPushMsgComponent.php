@@ -195,11 +195,13 @@ class WsPushMsgComponent extends BaseCoreComponent
         $servers = get_inject_obj(WsServerComponent::class)->getServerList();
         $ret     = [];
         foreach ($servers as $server) {
+            //每台一份独立副本:nfd(不推送的FD)只对其所在服务器有效,不能串到其它服务器的 Job(否则误排除无关连接)
+            $msg = $message;
             if (($nsfd['sv'] ?? '') == $server) {//不推送的FD,必须与所在服务器对应
-                $message['nfd'] = $nsfd['fd'] ?? 0;
+                $msg['nfd'] = $nsfd['fd'] ?? 0;
             }
             //分发到对应服务器的消息队列
-            $job = new PushMessageJob($cmd, $message);
+            $job = new PushMessageJob($cmd, $msg);
             $job->setQueue(self::getQueue($server));
             $ret[] = AsyncQueue::push($job, intval($delay));
         }
@@ -257,7 +259,7 @@ class WsPushMsgComponent extends BaseCoreComponent
             //分发到对应服务器的消息队列
             $job = new PushMessageJob($cmd, $msg);
             $job->setQueue(self::getQueue($serverFd['sv']));
-            $ret[] = AsyncQueue::push($job, $delay);
+            $ret[] = AsyncQueue::push($job, intval($delay));
         }
 
         if (in_array(true, $ret)) {
@@ -268,8 +270,9 @@ class WsPushMsgComponent extends BaseCoreComponent
 
     private function formatMessage($cmd, $message, $fd = 0)
     {
-        //$message['uid'] = $message['uid'] ?? 0;
-        //$message['fd']  = $fd;//指定连接
+        //指定连接:>0 由 PushMessageJob 走本机定向 Sender;0(默认/广播)走 WsBroadcast::toAll。
+        //必须写入——否则定向推送(pushToDimMessage/pushToUidMessage)的目标 fd 丢失、Job 误判为广播。
+        $message['fd'] = (int) $fd;
         return $message;
     }
 
