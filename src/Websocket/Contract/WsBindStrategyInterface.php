@@ -27,9 +27,9 @@ interface WsBindStrategyInterface
      *
      * @param int   $fd       本次连接的 Swoole 文件描述符（连接的本机唯一标识）。一般用不到，
      *                        预留给"维度值需依赖具体连接"的特殊策略。
-     * @param array $identity 握手鉴权阶段解析出的身份（由 WsIdentityResolver 解析、写入握手头后取得），
-     *                        至少含 `account_id`（账号 id）与 `token`（本次连接票据）。
-     *                        自定义策略若需额外维度（如 device/client_type），应让鉴权侧把信息放进身份/请求头，再在实现里读取拼入。
+     * @param array $identity **WsIdentityResolver::resolveByToken() 的完整返回**（+ token），握手时由鉴权侧存入、setBind 原样传入。
+     *                        含 `account_id`、`token`，以及 resolver 返回的任意业务字段（如 device/client_type/account_type…）。
+     *                        即：自定义策略要按哪个维度绑定，只要让 resolver 返回对应字段，这里就能直接读到（无需再走 header）。
      *
      * @return array dimName => dimValue 维度集合。
      *               - dimName：维度名，会成为反向索引 key 的一段（`<prefix>bind:<dimName>:<dimValue>`）；

@@ -6,6 +6,7 @@ namespace Dleno\CommonCore\Websocket\Component;
 
 use Dleno\CommonCore\Base\BaseCoreComponent;
 use Dleno\CommonCore\Websocket\Contract\WsBindStrategyInterface;
+use Dleno\CommonCore\Websocket\Support\WsIdentity;
 use Dleno\CommonCore\Websocket\Support\WsKeys;
 use Dleno\CommonCore\Websocket\Support\WsRedisCap;
 use Hyperf\Di\Annotation\Inject;
@@ -37,11 +38,15 @@ class WsTokenComponent extends BaseCoreComponent
      */
     public function setBind($fd)
     {
-        //标准身份(握手写入的头);自定义维度由业务 strategy 在 bindDimensions 内自行补充(可读各自的头)
-        $identity = [
-            'account_id' => get_header_val(WsKeys::HEADER_ACCOUNT_ID, 0),
-            'token'      => get_header_val(WsKeys::HEADER_TOKEN, ''),
-        ];
+        //完整身份(握手时鉴权侧 WsIdentity::set 存入 = resolveByToken 的返回 + token)→ strategy 可据此定义任意维度。
+        //兜底:未存(老中间件未升级)则用标准头重建最小身份(BC,仅 account_id+token)。
+        $identity = WsIdentity::get();
+        if (empty($identity)) {
+            $identity = [
+                'account_id' => get_header_val(WsKeys::HEADER_ACCOUNT_ID, 0),
+                'token'      => get_header_val(WsKeys::HEADER_TOKEN, ''),
+            ];
+        }
         $dims        = $this->bindStrategy->bindDimensions((int) $fd, $identity); // dim => value
         $addressable = $this->bindStrategy->addressableDimensions();              // [dim, ...]
 
