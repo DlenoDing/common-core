@@ -39,15 +39,8 @@ class WsTokenComponent extends BaseCoreComponent
     public function setBind($fd)
     {
         //完整身份(握手时鉴权侧 WsIdentity::set 存入 = resolveByToken 的返回 + token)→ strategy 可据此定义任意维度。
-        //兜底:未存(老中间件未升级)则用标准头重建最小身份(BC,仅 account_id+token)。
+        //无身份(鉴权侧未 WsIdentity::set,如握手未通过/未接入)→ 不绑,避免写出无意义/残缺的绑定。
         $identity = WsIdentity::get();
-        if (empty($identity)) {
-            $identity = [
-                'account_id' => get_header_val(WsKeys::HEADER_ACCOUNT_ID, 0),
-                'token'      => get_header_val(WsKeys::HEADER_TOKEN, ''),
-            ];
-        }
-        //无身份 → 不绑(避免写出无意义/残缺的绑定)
         if (empty($identity)) {
             return;
         }

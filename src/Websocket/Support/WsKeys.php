@@ -33,10 +33,6 @@ class WsKeys
     const SERVER_REG_LIMIT = 30;                     // 服务器注册频率/有效期基数
     const BIND_CACHE_TIME  = 60;                     // 客户端绑定缓存时间
 
-    //握手头名 —— 与脚手架 WsRequestConf 同值（BC）；auth 写入、绑定读取
-    const HEADER_TOKEN      = 'Client-Token';
-    const HEADER_ACCOUNT_ID = 'Client-AccountId';
-
     //前缀进程级缓存（config 启动期固定，不会运行时变；每 worker 一份，协程安全）
     private static ?string $prefix = null;
 
