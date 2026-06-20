@@ -42,6 +42,14 @@ class ConfigProvider
                 //JsonRpc返回 PHP 对象
                 NormalizerInterface::class   => new SerializerFactory(Serializer::class),
 
+                //HTTP 路由核心：Hyperf 未在自身 ConfigProvider 绑定这两个，故包内自注入即可生效（业务可在 app 覆盖）。
+                //注：RequestParserInterface / RequestInterface 因 Hyperf 自身 ConfigProvider 也绑、包内覆盖不住，
+                //   必须留在 app config/autoload/dependencies.php（唯一能稳定压过所有 ConfigProvider 的层）。
+                \Hyperf\HttpServer\CoreMiddleware::class
+                    => \Dleno\CommonCore\Middleware\Http\CoreMiddleware::class,
+                \Hyperf\HttpServer\Router\DispatcherFactory::class
+                    => \Dleno\CommonCore\Core\Route\RouterDispatcherFactory::class,
+
                 //WS 默认绑定：钩子默认 no-op（业务不覆盖即零成本；身份解析现走 WsHook::onHandshake）。
                 //WsBindStrategyInterface 无包内默认，业务必须在 app dependencies.php 绑定
                 //（绑定策略默认实现已下放业务端：App\WebSocket\Bind\DefaultWsBindStrategy）。
