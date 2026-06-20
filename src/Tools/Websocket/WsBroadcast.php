@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Tools\Websocket;
 
 use Dleno\CommonCore\PipeMessage\Websocket\WsBroadcastPipeMessage;
+use Hyperf\WebSocketServer\Collector\FdCollector;
 use Swoole\Server;
 
 use function Hyperf\Config\config;
@@ -65,7 +66,7 @@ class WsBroadcast
         $selfWid = ($selfWidRaw >= 0 && $selfWidRaw < $workerNum + $taskNum) ? $selfWidRaw : -1;
 
         if ($isEventWorker) {
-            self::pushLocal($server, $msg);// 从事件 worker 触发：本地直接推
+            self::pushLocal($server, $msg, true);// 从事件 worker 触发：本地直接推（BASE 用进程内 fd 集合）
         }
         for ($wid = 0; $wid < $workerNum; ++$wid) {
             if ($isEventWorker && $wid === $selfWid) {
@@ -83,12 +84,23 @@ class WsBroadcast
      * 在当前事件 worker 内，推送给本地全部活跃连接。
      * 供 toAll() 的 PROCESS/自身分支与 OnPipeMessageListener 复用。
      */
-    public static function pushLocal($server, WsBroadcastPipeMessage $msg): void
+    public static function pushLocal($server, WsBroadcastPipeMessage $msg, bool $preferLocalSet = false): void
     {
         $nfd = $msg->nfd;
-        $i   = 0;
-        // 复用 CheckFd 的本地活跃 fd 枚举（getClientList 分页 + websocket_status 过滤，排除 HTTP/非活跃）
-        foreach (CheckFd::localActives($server) as $fd) {
+        if ($preferLocalSet) {
+            // Tier 2+（仅 BASE）：直接复用 Hyperf 框架已维护的 per-worker fd 集合 FdCollector
+            //（框架在 onHandShake 时 set、onClose 时 del，本 worker 私有，零额外维护、零 syscall 枚举）；
+            // 极端为空时回落 CheckFd::localActives（安全降级）
+            $fds = array_keys(FdCollector::list());
+            if (empty($fds)) {
+                $fds = CheckFd::localActives($server);
+            }
+        } else {
+            // PROCESS：连接表共享，必须全量枚举（getClientList 分页 + websocket_status 过滤，排除 HTTP/非活跃）
+            $fds = CheckFd::localActives($server);
+        }
+        $i = 0;
+        foreach ($fds as $fd) {
             if ($fd === $nfd) {
                 continue;
             }
