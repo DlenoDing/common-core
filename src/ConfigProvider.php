@@ -23,12 +23,18 @@ use Hyperf\Database\Model\Builder;
 use Dleno\CommonCore\Model\ModelUpdateVisitor;
 use Dleno\CommonCore\Websocket\Contract\WsHookInterface;
 use Dleno\CommonCore\Websocket\Hook\AbstractWsHook;
+use Dleno\CommonCore\Middleware\Http\InitMiddleware;
+use Dleno\CommonCore\Websocket\Server\WebSocketAuthMiddleware;
+
+use function Hyperf\Support\env;
 
 class ConfigProvider
 {
     public function __invoke(): array
     {
         return [
+            //基础中间件自动注入（按启用的 server 注入对应基座中间件，与 app middlewares.php 追加合并）。
+            'middlewares'  => $this->autoMiddlewares(),
             'dependencies' => [
                 //db连接池恒频组件(默认低频组件)[释放连接池中多余的连接]
                 //\Hyperf\DbConnection\Frequency::class => \Hyperf\Pool\ConstantFrequency::class,
@@ -73,5 +79,27 @@ class ConfigProvider
                 ],
             ],
         ];
+    }
+
+    /**
+     * 基础中间件自动注入。
+     * 按"对应 server 是否启用"自动给该 server 注入包内基座中间件：
+     *  - http server(ENABLE_HTTP) → InitMiddleware
+     *  - ws   server(ENABLE_WS)   → WebSocketAuthMiddleware（握手鉴权）
+     * 各有独立 env 开关、默认开；特殊需求时置 false 即不再自动注入（业务自行在 middlewares.php 接管）。
+     * 与 app config/autoload/middlewares.php 为追加合并（包内的排在前、业务的追加在后、按类名去重）。
+     */
+    private function autoMiddlewares(): array
+    {
+        $middlewares = [];
+        //HTTP 初始化中间件（env HTTP_INIT_MIDDLEWARE_ENABLE，默认开）
+        if (env('ENABLE_HTTP', false) && env('HTTP_INIT_MIDDLEWARE_ENABLE', true)) {
+            $middlewares['http'][] = InitMiddleware::class;
+        }
+        //WS 握手鉴权中间件（env WS_AUTH_MIDDLEWARE_ENABLE，默认开）
+        if (env('ENABLE_WS', false) && env('WS_AUTH_MIDDLEWARE_ENABLE', true)) {
+            $middlewares['ws'][] = WebSocketAuthMiddleware::class;
+        }
+        return $middlewares;
     }
 }
