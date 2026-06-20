@@ -104,12 +104,25 @@ class WsMessageRouter
             if ($psr7Response instanceof ResponseInterface) {
                 $data = $psr7Response->getBody()
                                      ->getContents();
+                //有的 WS 异常处理器(如 HttpException)按"握手风格"只写 status + HandShake-Message 头、不写 body;
+                //消息上下文下据此从状态码合成错误体,避免回包 code 丢成 0(握手链路不走本方法,不受影响)。
+                if ($data === '' || $data === null) {
+                    $status = $psr7Response->getStatusCode();
+                    if ($status && $status !== 200) {
+                        $data = [
+                            'code'  => $status,
+                            'msg'   => $psr7Response->getHeaderLine('HandShake-Message'),
+                            'data'  => [],
+                            'trace' => [],
+                        ];
+                    }
+                }
             }
         }
 
-        //回复消息到客户端-压缩支持
-        if (!empty($data)) {
-            //出站协议编码(归包)
+        //回复消息到客户端-压缩支持(null=不回包;空串/空数组等仍归一化回包)
+        if ($data !== null) {
+            //出站协议编码(归一化信封,归包)
             $return = WsProtocol::encodeReply($frame->data['reqId'], $data);
             //发送前钩子(默认 no-op;业务可观察/改写出站,自担协议责任)
             $return = $this->wsHook->beforeSend($server, (int)$frame->fd, $return);
