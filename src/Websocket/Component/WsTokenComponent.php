@@ -47,8 +47,16 @@ class WsTokenComponent extends BaseCoreComponent
                 'token'      => get_header_val(WsKeys::HEADER_TOKEN, ''),
             ];
         }
-        $dims        = $this->bindStrategy->bindDimensions((int) $fd, $identity); // dim => value
-        $addressable = $this->bindStrategy->addressableDimensions();              // [dim, ...]
+        //无身份 → 不绑(避免写出无意义/残缺的绑定)
+        if (empty($identity)) {
+            return;
+        }
+        $dims = $this->bindStrategy->bindDimensions((int) $fd, $identity); // dim => value
+        //无维度 → 不绑
+        if (empty($dims)) {
+            return;
+        }
+        $addressable = $this->bindStrategy->addressableDimensions();      // [dim, ...]
 
         $serverFd    = $this->getServerFd($fd);
         $serverFdStr = $this->serverFdField($serverFd);
@@ -56,15 +64,17 @@ class WsTokenComponent extends BaseCoreComponent
         //正向:serverFd 主绑定 => 完整维度(Close 时据此反删各反向索引)
         $this->redis->set($this->getSfdBindKey($serverFd), array_to_json($dims), WsKeys::BIND_CACHE_TIME);
 
-        //反向:每个可寻址维度建一份索引, field=sv:fd(每连接唯一,杜绝同 token 覆盖)
-        foreach ($addressable as $dim) {
-            if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
-                continue;
+        //反向:无可寻址维度则不做反向存储;否则每个可寻址维度建一份索引, field=sv:fd(每连接唯一,杜绝同 token 覆盖)
+        if (!empty($addressable)) {
+            foreach ($addressable as $dim) {
+                if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                    continue;
+                }
+                $dimKey = WsKeys::bindDimKey($dim, $dims[$dim]);
+                $this->redis->hSet($dimKey, $serverFdStr, array_to_json($serverFd));
+                //过期时间与用户数据缓存一致：7.4+ 下每 field 独立 TTL(死连接 field 自洁)，否则整 hash key TTL
+                $this->expireDimTtl($dimKey, $serverFdStr);
             }
-            $dimKey = WsKeys::bindDimKey($dim, $dims[$dim]);
-            $this->redis->hSet($dimKey, $serverFdStr, array_to_json($serverFd));
-            //过期时间与用户数据缓存一致：7.4+ 下每 field 独立 TTL(死连接 field 自洁)，否则整 hash key TTL
-            $this->expireDimTtl($dimKey, $serverFdStr);
         }
     }
 
@@ -79,9 +89,15 @@ class WsTokenComponent extends BaseCoreComponent
         $sfdBindKey  = $this->getSfdBindKey($serverFd);
         //据主绑定里的维度,刷新主绑定 + 各可寻址反向索引
         $dims = json_to_array($this->redis->get($sfdBindKey));
+        //无主绑定(已过期/未绑) → 无可刷新
+        if (empty($dims)) {
+            return;
+        }
         $this->redis->expire($sfdBindKey, WsKeys::BIND_CACHE_TIME);
-        if (!empty($dims)) {
-            foreach ($this->bindStrategy->addressableDimensions() as $dim) {
+        //无可寻址维度则不刷新反向索引
+        $addressable = $this->bindStrategy->addressableDimensions();
+        if (!empty($addressable)) {
+            foreach ($addressable as $dim) {
                 if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
                     continue;
                 }
@@ -120,17 +136,20 @@ class WsTokenComponent extends BaseCoreComponent
         $serverFd    = $this->getServerFd($fd);
         $serverFdStr = $this->serverFdField($serverFd);
         $sfdBindKey  = $this->getSfdBindKey($serverFd);
-        //取主绑定的维度,反删每个可寻址反向索引(field=sv:fd)
+        //取主绑定的维度,反删每个可寻址反向索引(field=sv:fd);无维度或无可寻址维度则跳过反删
         $dims = json_to_array($this->redis->get($sfdBindKey));
         if (!empty($dims)) {
-            foreach ($this->bindStrategy->addressableDimensions() as $dim) {
-                if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
-                    continue;
+            $addressable = $this->bindStrategy->addressableDimensions();
+            if (!empty($addressable)) {
+                foreach ($addressable as $dim) {
+                    if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                        continue;
+                    }
+                    $this->redis->hDel(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
                 }
-                $this->redis->hDel(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
             }
         }
-        //删除serverFd主绑定数据
+        //始终删除 serverFd 主绑定数据(清理,无论有无维度)
         $this->redis->del($sfdBindKey);
     }
 
