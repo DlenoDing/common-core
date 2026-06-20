@@ -7,6 +7,7 @@ namespace Dleno\CommonCore\Websocket\Job;
 use Dleno\CommonCore\Base\AsyncQueue\BaseJob;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 use Dleno\CommonCore\Websocket\Component\WsServerComponent;
 
 /**
@@ -84,6 +85,6 @@ class CloseMessageJob extends BaseJob
      */
     public function getConfig()
     {
-        return $this->_getConfig();
+        return WsQueueConfig::resolve($this->getQueue());
     }
 }

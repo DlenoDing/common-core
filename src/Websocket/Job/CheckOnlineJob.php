@@ -8,6 +8,7 @@ use Dleno\CommonCore\Base\AsyncQueue\BaseJob;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Websocket\Broadcast\CheckFd;
 use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 use Dleno\CommonCore\Websocket\Component\WsServerComponent;
 use Hyperf\Redis\Redis;
 
@@ -104,6 +105,6 @@ class CheckOnlineJob extends BaseJob
      */
     public function getConfig()
     {
-        return $this->_getConfig();
+        return WsQueueConfig::resolve($this->getQueue());
     }
 }

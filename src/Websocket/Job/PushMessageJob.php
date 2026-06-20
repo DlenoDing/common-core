@@ -8,6 +8,7 @@ use Dleno\CommonCore\Base\AsyncQueue\BaseJob;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Websocket\Broadcast\WsBroadcast;
 use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 
 /**
  * 推送消息 Job（纯基建，下沉自脚手架）。
@@ -85,6 +86,6 @@ class PushMessageJob extends BaseJob
      */
     public function getConfig()
     {
-        return $this->_getConfig();
+        return WsQueueConfig::resolve($this->getQueue());
     }
 }
