@@ -16,8 +16,10 @@ use Hyperf\Snowflake\IdGeneratorInterface;
  *
  * 设计（由 WsServerProcess 每轮调 tick()）：
  *  - **能力门禁**：支持 HEXPIRE 直接 return。
- *  - **leader 化（用现成的 DcsLock）**：抢一次长租锁——DcsLock 原子 SET NX 获取、Lua 原子释放、持有≥10s 自动续约、
- *    加锁协程(进程 handle)结束时 defer 自动释放(关停干净失效切换)。只 leader 那台扫，避免 N× 冗余。
+ *  - **每次执行现拿锁(用现成 DcsLock，非长租)**：每轮新生成 uuid 抢锁(timeout=0)，抢到才扫；
+ *    本方法跑在 WsServerProcess 起的后台协程里，sweep 结束协程退出 → DcsLock 的 defer 自动释放锁。
+ *    即"用完即放"，不长期占用 leader；用新 uuid 避免上一轮续约 Timer 误删本轮锁。拿不到锁=有人在扫，跳过。
+ *  - **协程化(在调用方 WsServerProcess)**：放后台协程跑，清扫再慢也不阻塞主循环的服务器注册续约。
  *  - **注册表 SET 遍历(不全库 SCAN)**：setBind 已把各反向索引 key 登记进 WsKeys::bindIndexKey()；这里只 SSCAN 注册表，
  *    复杂度 O(活跃维度数)而非 O(全库)，吞吐与频率不再敏感；顺手 SREM 掉已空/不存在的反向索引。
  *  - **限流**：SSCAN 每批 COUNT，cursor 持久化续扫；且两次扫描最小间隔 SWEEP_INTERVAL。
@@ -26,15 +28,13 @@ use Hyperf\Snowflake\IdGeneratorInterface;
  */
 class WsBindSweeper
 {
-    const LOCK_KEY        = 'bind:sweep:leader';  // DcsLock 锁 key(逻辑,DcsLock 内部按其 pool 前缀)
+    const LOCK_KEY        = 'bind:sweep:lock';    // DcsLock 锁 key(逻辑,DcsLock 内部按其 pool 前缀)
     const CURSOR_SUFFIX   = 'bind:sweep:cursor';
-    const LOCK_TTL        = 60;                    // leader 租约(秒)，DcsLock 自动续约
+    const LOCK_TTL        = 30;                    // 锁安全 TTL(秒);正常由 defer 提前释放,崩溃则最多 30s 后他人接管
     const SCAN_COUNT      = 500;                   // SSCAN 每批(对注册表 SET,远小于全库)
     const SWEEP_INTERVAL  = 60;                    // 两次清扫最小间隔(秒)，与注册循环(15s)解耦
 
     private static int $lastSweepAt = 0;
-    private static bool $isLeader   = false;
-    private static string $lockUuid = '';
 
     public static function tick(): void
     {
@@ -43,34 +43,21 @@ class WsBindSweeper
             if (WsRedisCap::supportsHExpire($redis)) {
                 return; // 7.4+：HEXPIRE 已自洁，无需清扫
             }
-            if (!self::ensureLeader()) {
-                return; // 非 leader，本轮不扫
-            }
             $now = time();
             if (($now - self::$lastSweepAt) < self::SWEEP_INTERVAL) {
                 return; // 距上次清扫不足间隔
             }
+            //每次执行现拿锁(新 uuid)：拿不到=有人在扫,跳过;拿到则本协程结束时 DcsLock 的 defer 自动释放
+            $uuid = (string) get_inject_obj(IdGeneratorInterface::class)->generate();
+            if (!DcsLock::lock(WsKeys::prefix() . self::LOCK_KEY, $uuid, self::LOCK_TTL, 0)) {
+                return;
+            }
             self::$lastSweepAt = $now;
             self::sweepBatch($redis);
+            //不显式 unlock：DcsLock 已在本协程注册 defer，协程退出即释放
         } catch (\Throwable $e) {
             // best-effort：忽略，不影响注册主循环
         }
-    }
-
-    /**
-     * leader 选举：用 DcsLock 抢一次长租锁。抢到即 leader，DcsLock 自动续约保持、进程关停自动释放。
-     */
-    private static function ensureLeader(): bool
-    {
-        if (self::$isLeader) {
-            return true; // 已是 leader(DcsLock 自动续约中)
-        }
-        if (self::$lockUuid === '') {
-            self::$lockUuid = (string) get_inject_obj(IdGeneratorInterface::class)->generate();
-        }
-        //timeout=0：抢不到直接返回 false(别的服是 leader)，本轮不扫；抢到则长租
-        self::$isLeader = DcsLock::lock(WsKeys::prefix() . self::LOCK_KEY, self::$lockUuid, self::LOCK_TTL, 0);
-        return self::$isLeader;
     }
 
     private static function sweepBatch(Redis $redis): void
