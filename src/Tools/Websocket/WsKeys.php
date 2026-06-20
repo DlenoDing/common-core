@@ -20,6 +20,10 @@ class WsKeys
     const QUEUE_PREFIX    = 'ws:queue:message:';     // per-server 实时消息队列
     const CHECK_PREFIX    = 'ws:check:online:';      // 在线检查结果
 
+    //时长（秒）—— 与脚手架 WsServerConf 同值（BC）
+    const SERVER_REG_LIMIT = 30;                     // 服务器注册频率/有效期基数
+    const BIND_CACHE_TIME  = 60;                     // 客户端绑定缓存时间
+
     public static function serverListKey(): string
     {
         return self::SERVER_LIST;
