@@ -58,10 +58,18 @@ class LoggerConfig
     }
 
     /**
-     * 单个文件日志 handler 配置(LogFileHandler + LineFormatter)。
+     * 单个文件日志 handler 配置(LogFileHandler + 统一 LineFormatter)。公开供业务方扩展自定义频道/级别时复用:
+     *   在 config/autoload/logger.php 的自定义段直接 LoggerConfig::fileHandler('xxx-debug.log', Level::Debug) 生成,
+     *   即可与包内日志保持同一格式/目录/轮转策略。
+     *
+     * @param string   $file     日志文件名(置于 runtime/logs/api/ 下)
+     * @param Level    $level    日志级别
+     * @param int|null $maxFiles 轮转保留文件数;省略则取 env('LOG_MAX_FILES') 默认值(与默认配置同源)
      */
-    private static function fileHandler(string $file, Level $level, int $maxFiles): array
+    public static function fileHandler(string $file, Level $level, ?int $maxFiles = null): array
     {
+        $maxFiles ??= (int) env('LOG_MAX_FILES', self::DEFAULT_MAX_FILES);
+
         return [
             'class' => LogFileHandler::class,
             'constructor' => [
