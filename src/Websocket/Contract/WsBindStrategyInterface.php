@@ -50,4 +50,19 @@ interface WsBindStrategyInterface
      *                  多端 `['account_id','device']`（既能推给某用户全部端，也能精准推给某一端）。
      */
     public function addressableDimensions(): array;
+
+    /*
+     * 【可选方法】public function uniqueDimensions(): array
+     *
+     * 声明哪些维度「同一维度值下只允许一个连接」（后登录踢前登录 / 单点登录）。
+     * 不实现本方法、或返回空数组 → 维持默认：同维度值可挂多个连接。
+     *  - 必须是 addressableDimensions() 的**子集**（强制唯一需用反向索引反查旧连接）。
+     *  - 维度值可以是组合字段：在 bindDimensions() 里把多个字段拼成一个维度值即可，
+     *    例如 `['login' => $identity['account_id'].':'.$identity['device']]` 再把 'login' 列入本方法，
+     *    即实现「同一 account_id+device 只允许一个连接」。
+     *  - 由 common-core 在 setBind 时强制：写入本连接后，踢掉同值下的其它连接（跨机经队列、旧连接 onClose 自清绑定）。
+     *  - 性能：仅对所列维度多做一次极小的反向 hash 读取；未声明则零开销。
+     *
+     * 本方法用 method_exists 软发现以保持向后兼容，故未写进接口签名（旧实现无需改动）。
+     */
 }

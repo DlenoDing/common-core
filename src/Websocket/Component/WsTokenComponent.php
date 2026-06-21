@@ -68,6 +68,60 @@ class WsTokenComponent extends BaseCoreComponent
                 //过期时间与用户数据缓存一致：7.4+ 下每 field 独立 TTL(死连接 field 自洁)，否则整 hash key TTL
                 $this->expireDimTtl($dimKey, $serverFdStr);
             }
+
+            //单连接维度(可选 uniqueDimensions):同维度值已有别的连接 → 踢旧(后登录踢前登录)。
+            //未声明/空 → 直接跳过,零额外开销,保持"同维度值多连接"的默认行为。
+            $unique = $this->resolveUniqueDimensions();
+            if (!empty($unique)) {
+                $this->enforceUnique($unique, $dims, $addressable, $serverFdStr);
+            }
+        }
+    }
+
+    /**
+     * 读取策略声明的"单连接维度"。
+     * uniqueDimensions() 是可选方法(未实现即按多连接处理)——故用 method_exists 软发现,保持向后兼容。
+     */
+    private function resolveUniqueDimensions(): array
+    {
+        $strategy = $this->bindStrategy;
+        if (!method_exists($strategy, 'uniqueDimensions')) {
+            return [];
+        }
+        $unique = $strategy->uniqueDimensions();
+        return is_array($unique) ? $unique : [];
+    }
+
+    /**
+     * 对"单连接维度"强制唯一:本连接刚写入反向索引后,踢掉同维度值下的其它连接(后登录踢前登录)。
+     * 性能:仅在 uniqueDimensions 非空时进入;唯一维度的反向 hash 恒只含本连接(±个别旧连接),hGetAll 极小;
+     * 仅当真有旧连接才下发 closeClient。不碰发消息/心跳路径。
+     */
+    private function enforceUnique(array $unique, array $dims, array $addressable, string $serverFdStr): void
+    {
+        foreach ($unique as $dim) {
+            //仅对"本连接已绑定 + 建了反向索引(addressable)"的维度生效;否则无从反查旧连接
+            if (!array_key_exists($dim, $dims) || $dims[$dim] === null || !in_array($dim, $addressable, true)) {
+                continue;
+            }
+            $all = $this->redis->hGetAll(WsKeys::bindDimKey($dim, $dims[$dim]));
+            if (!is_array($all) || count($all) <= 1) {
+                continue; //只有本连接 → 无需踢
+            }
+            $stale = []; //sv => [fd, ...]
+            foreach ($all as $field => $sfdJson) {
+                if ($field === $serverFdStr) {
+                    continue; //不踢自己
+                }
+                $sf = json_to_array($sfdJson);
+                if (isset($sf['sv'], $sf['fd'])) {
+                    $stale[$sf['sv']][] = $sf['fd'];
+                }
+            }
+            if (!empty($stale)) {
+                //踢旧:本机/跨机统一经 closeClient(到各 server 队列);旧连接 onClose→unBind 自清其全部绑定。
+                get_inject_obj(WsPushMsgComponent::class)->closeClient($stale);
+            }
         }
     }
 
