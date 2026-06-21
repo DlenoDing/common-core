@@ -85,14 +85,19 @@ class WsTokenComponent extends BaseCoreComponent
      */
     private function enforceUnique(array $unique, array $dims, array $addressable, string $serverFdStr): void
     {
+        $servers = null; //懒取在线服务器列表:仅当真有旧连接要处理时才读一次
         foreach ($unique as $dim) {
             //仅对"本连接已绑定 + 建了反向索引(addressable)"的维度生效;否则无从反查旧连接
             if (!array_key_exists($dim, $dims) || $dims[$dim] === null || !in_array($dim, $addressable, true)) {
                 continue;
             }
-            $all = $this->redis->hGetAll(WsKeys::bindDimKey($dim, $dims[$dim]));
+            $dimKey = WsKeys::bindDimKey($dim, $dims[$dim]);
+            $all    = $this->redis->hGetAll($dimKey);
             if (!is_array($all) || count($all) <= 1) {
                 continue; //只有本连接 → 无需踢
+            }
+            if ($servers === null) {
+                $servers = get_inject_obj(WsServerComponent::class)->getServerList();
             }
             $stale = []; //sv => [fd, ...]
             foreach ($all as $field => $sfdJson) {
@@ -100,9 +105,15 @@ class WsTokenComponent extends BaseCoreComponent
                     continue; //不踢自己
                 }
                 $sf = json_to_array($sfdJson);
-                if (isset($sf['sv'], $sf['fd'])) {
-                    $stale[$sf['sv']][] = $sf['fd'];
+                if (!isset($sf['sv'], $sf['fd'])) {
+                    continue;
                 }
+                if (!in_array($sf['sv'], $servers, true)) {
+                    //该 field 所属 server 已下线 → 是 stale,直接 hDel 自愈,不给死队列派无用 close Job
+                    $this->redis->hDel($dimKey, $field);
+                    continue;
+                }
+                $stale[$sf['sv']][] = $sf['fd'];
             }
             if (!empty($stale)) {
                 //踢旧:本机/跨机统一经 closeClient(到各 server 队列);旧连接 onClose→unBind 自清其全部绑定。
