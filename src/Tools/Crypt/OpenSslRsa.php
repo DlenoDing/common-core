@@ -14,17 +14,18 @@ namespace Dleno\CommonCore\Tools\Crypt;
  */
 class OpenSslRsa
 {
-    //明文分块字节数(对 base64 后的数据分块;须 < 该位数密钥可容纳的最大明文,2048 位 PKCS1 上限约 245)
+    //历史默认分块长度(仅作参考/可显式传);现默认 encryptLen=0=按密钥自动取最大安全块
     const ENCRYPT_LEN = 32;
 
     /**
      * 私钥加密
      * @param string $dataContent 明文
      * @param string $privateKey  私钥 PEM(必传)
-     * @param int    $encryptLen  每块明文(base64 串)长度;0=该密钥最大安全块;超上限自动钳制,不会失败
+     * @param int    $encryptLen  每块明文(base64 串)长度;**默认 0 = 该密钥最大安全块(最省)**;超上限自动钳制,不会失败。
+     *                            注:加密块大小不影响解密——解密按密钥位数读密文块再拼接,任意块大小都能解。
      * @return string|false hex 密文;失败 false
      */
-    public static function encryptedByPrivateKey($dataContent, string $privateKey, int $encryptLen = self::ENCRYPT_LEN)
+    public static function encryptedByPrivateKey($dataContent, string $privateKey, int $encryptLen = 0)
     {
         return self::chunkEncrypt($dataContent, $privateKey, true, $encryptLen);
     }
@@ -44,10 +45,11 @@ class OpenSslRsa
      * 公钥加密
      * @param string $dataContent 明文
      * @param string $publicKey   公钥 PEM(必传)
-     * @param int    $encryptLen  每块明文(base64 串)长度;0=该密钥最大安全块;超上限自动钳制,不会失败
+     * @param int    $encryptLen  每块明文(base64 串)长度;**默认 0 = 该密钥最大安全块(最省)**;超上限自动钳制,不会失败。
+     *                            注:加密块大小不影响解密——解密按密钥位数读密文块再拼接,任意块大小都能解。
      * @return string|false hex 密文;失败 false
      */
-    public static function encryptedByPublicKey($dataContent, string $publicKey, int $encryptLen = self::ENCRYPT_LEN)
+    public static function encryptedByPublicKey($dataContent, string $publicKey, int $encryptLen = 0)
     {
         return self::chunkEncrypt($dataContent, $publicKey, false, $encryptLen);
     }
