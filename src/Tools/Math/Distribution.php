@@ -81,11 +81,12 @@ class Distribution
         //算法分配
         $prevMax = $start;
         //无可分配(全部已排满 $start==$count，或 $count<=0)→ 按契约返回 false，
-        //避免 mt_rand($start+1, $count) 因 min>max 在 PHP8 抛 ValueError。
+        //避免 random_int($start+1, $count) 因 min>max 抛 ValueError(同时上面守卫保证 $start<$count)。
         if ($start >= $count) {
             return false;
         }
-        $rand    = mt_rand($start + 1, $count);
+        //random_int(CSPRNG,无取模偏置、不可预测) 优于 mt_rand;此处守卫已保证 min<=max。
+        $rand    = random_int($start + 1, $count);
         foreach ($data as $val) {
             if ($rand > $prevMax && $rand <= $val['_max_'] + $prevMax) {
                 return $val[$retKey];

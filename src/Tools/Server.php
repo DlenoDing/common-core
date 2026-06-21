@@ -92,7 +92,7 @@ class Server
             if (empty($traceId)) {
                 $traceId = rpc_context_get(RpcContextConf::TRACE_ID);
                 $traceId = $traceId ?? (Context::get(RequestConf::REQUEST_RUN_START) ?? microtime(true)) . '.' .
-                                       mt_rand(1000000, 9999999);
+                                       random_int(1000000, 9999999);//CSPRNG:不可预测、降低碰撞(格式不变)
             }
             Context::set(RequestConf::REQUEST_TRACE_ID, $traceId);
         }

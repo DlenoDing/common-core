@@ -218,8 +218,8 @@ class Strings
         $keyArr = str_split($key);
         //密钥长度，推荐62
         $keyLen = count($keyArr);
-        //随机数字
-        $rand = mt_rand(0, $keyLen - 1);
+        //随机数字(random_int:CSPRNG、无取模偏置;decode 从首字符还原 $rand,故换 RNG 不影响可逆性)
+        $rand = random_int(0, $keyLen - 1);
         //将随机值压入结果开头
         $str = $keyArr[$rand];
         //验证码
