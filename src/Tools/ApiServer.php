@@ -83,7 +83,8 @@ class ApiServer
         if (!Context::has(RequestConf::REQUEST_AES_KEY)) {
             $aesKey = get_header_val('Client-Key', '');
             if (!empty($aesKey)) {
-                $aesKey = OpenSslRsa::decryptByPrivateKey($aesKey); //rsa解密key
+                //RSA 私钥由调用方从配置(env)取出后传入,不在 OpenSslRsa 内部读 config
+                $aesKey = OpenSslRsa::decryptByPrivateKey($aesKey, (string) config('crypt.rsa.private_key', '')); //rsa解密key
             }
             Context::set(RequestConf::REQUEST_AES_KEY, $aesKey);
         }
