@@ -43,7 +43,12 @@ class HttpExceptionHandler extends \Hyperf\HttpServer\Exception\Handler\HttpExce
             $output = OutPut::outJsonToError($message, $code);
         }
 
-        return $response->withStatus($code)->withBody(new SwooleStream($output));
+        //HTTP status 必须是合法状态码(100–599);若业务误用 HttpException 带越界码(如业务码 4001 / <100),
+        //Swoole 发送端会产出损坏响应(客户端收到 -3 重置、空 body)→ 越界时 status 回退 500,
+        //body 仍保留原 $code(含业务码),既给干净错误响应、又不丢业务码语义。
+        $status = ($code >= 100 && $code <= 599) ? (int) $code : RcodeConf::ERROR_SERVER;
+
+        return $response->withStatus($status)->withBody(new SwooleStream($output));
     }
 
     /**
