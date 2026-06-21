@@ -69,27 +69,13 @@ class WsTokenComponent extends BaseCoreComponent
                 $this->expireDimTtl($dimKey, $serverFdStr);
             }
 
-            //单连接维度(可选 uniqueDimensions):同维度值已有别的连接 → 踢旧(后登录踢前登录)。
-            //未声明/空 → 直接跳过,零额外开销,保持"同维度值多连接"的默认行为。
-            $unique = $this->resolveUniqueDimensions();
+            //单连接维度(uniqueDimensions):同维度值已有别的连接 → 踢旧(后登录踢前登录)。
+            //空(默认) → 直接跳过,零额外开销,保持"同维度值多连接"的默认行为。
+            $unique = $this->bindStrategy->uniqueDimensions();
             if (!empty($unique)) {
                 $this->enforceUnique($unique, $dims, $addressable, $serverFdStr);
             }
         }
-    }
-
-    /**
-     * 读取策略声明的"单连接维度"。
-     * uniqueDimensions() 是可选方法(未实现即按多连接处理)——故用 method_exists 软发现,保持向后兼容。
-     */
-    private function resolveUniqueDimensions(): array
-    {
-        $strategy = $this->bindStrategy;
-        if (!method_exists($strategy, 'uniqueDimensions')) {
-            return [];
-        }
-        $unique = $strategy->uniqueDimensions();
-        return is_array($unique) ? $unique : [];
     }
 
     /**
