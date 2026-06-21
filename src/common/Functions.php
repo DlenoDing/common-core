@@ -167,7 +167,8 @@ if (!function_exists('array_to_xml')) {
      */
     function array_to_xml(array $data, ?\SimpleXMLElement $xml = null, $parentKey = null)
     {
-        if ($xml === null) {
+        $isRoot = ($xml === null);
+        if ($isRoot) {
             $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><xml></xml>');
         }
         foreach ($data as $key => $value) {
@@ -189,7 +190,9 @@ if (!function_exists('array_to_xml')) {
                 }
             }
         }
-        return $xml->asXML();
+        //仅在根部把整棵树序列化为字符串;内层递归只需借 addChild 建树(其返回值本就被忽略),
+        //避免每层都 asXML() 重复序列化子树(嵌套越深浪费越大)。
+        return $isRoot ? $xml->asXML() : $xml;
     }
 }
 
