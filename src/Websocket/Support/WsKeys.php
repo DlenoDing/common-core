@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Websocket\Support;
 
+use Dleno\CommonCore\Base\AsyncQueue\BaseDriverFactory;
+
 use function Hyperf\Config\config;
 
 /**
@@ -85,12 +87,14 @@ class WsKeys
     }
 
     /**
-     * Hyperf AsyncQueue 通道的固定 5 子键。
+     * Hyperf AsyncQueue 通道的固定 5 子键(供 clearRelServerData 的 unlink 直连删除)。
+     * 必须与驱动写入的物理键一致：BaseDriverFactory 给 channel 包了 hash tag,
+     * 故此处也用 hashTagChannel(queueName) 拼,既命中真实键、又让 5 子键同 slot(集群下 unlink 不 CROSSSLOT)。
      * @return string[]
      */
     public static function queueSubKeys(string $serverKey): array
     {
-        $c = self::queueName($serverKey);
+        $c = BaseDriverFactory::hashTagChannel(self::queueName($serverKey));
         return [$c . ':waiting', $c . ':reserved', $c . ':delayed', $c . ':failed', $c . ':timeout'];
     }
 
