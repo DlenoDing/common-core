@@ -21,11 +21,12 @@ class OpenSslRsa
      * 私钥加密
      * @param string $dataContent 明文
      * @param string $privateKey  私钥 PEM(必传)
+     * @param int    $encryptLen  每块明文(base64 串)长度;0=该密钥最大安全块;超上限自动钳制,不会失败
      * @return string|false hex 密文;失败 false
      */
-    public static function encryptedByPrivateKey($dataContent, string $privateKey)
+    public static function encryptedByPrivateKey($dataContent, string $privateKey, int $encryptLen = self::ENCRYPT_LEN)
     {
-        return self::chunkEncrypt($dataContent, $privateKey, true);
+        return self::chunkEncrypt($dataContent, $privateKey, true, $encryptLen);
     }
 
     /**
@@ -43,11 +44,12 @@ class OpenSslRsa
      * 公钥加密
      * @param string $dataContent 明文
      * @param string $publicKey   公钥 PEM(必传)
+     * @param int    $encryptLen  每块明文(base64 串)长度;0=该密钥最大安全块;超上限自动钳制,不会失败
      * @return string|false hex 密文;失败 false
      */
-    public static function encryptedByPublicKey($dataContent, string $publicKey)
+    public static function encryptedByPublicKey($dataContent, string $publicKey, int $encryptLen = self::ENCRYPT_LEN)
     {
-        return self::chunkEncrypt($dataContent, $publicKey, false);
+        return self::chunkEncrypt($dataContent, $publicKey, false, $encryptLen);
     }
 
     /**
@@ -63,16 +65,28 @@ class OpenSslRsa
 
     /**
      * @param bool $usePrivate true=私钥加密;false=公钥加密
+     * @param int  $encryptLen 每块明文长度;按密钥安全上限(keyBytes-11)钳制,0=取上限
      * @return string|false
      */
-    private static function chunkEncrypt($dataContent, string $key, bool $usePrivate)
+    private static function chunkEncrypt($dataContent, string $key, bool $usePrivate, int $encryptLen)
     {
-        $key         = self::pem($key, $usePrivate);
+        $key      = self::pem($key, $usePrivate);
+        $keyBytes = self::keyBytes($key, $usePrivate);
+        if ($keyBytes <= 0) {
+            return false;
+        }
+        //PKCS1 单块明文上限 = keyBytes-11;传入值钳到 [1, 上限],<=0 取上限(该密钥最优、块数最少)
+        $max        = $keyBytes - 11;
+        $encryptLen = $encryptLen <= 0 ? $max : min($encryptLen, $max);
+        if ($max < 1) {
+            return false;
+        }
+
         $dataContent = base64_encode((string) $dataContent);
         $encrypted   = '';
         $total       = strlen($dataContent);
-        for ($pos = 0; $pos < $total; $pos += self::ENCRYPT_LEN) {
-            $chunk = substr($dataContent, $pos, self::ENCRYPT_LEN);
+        for ($pos = 0; $pos < $total; $pos += $encryptLen) {
+            $chunk = substr($dataContent, $pos, $encryptLen);
             $ok    = $usePrivate
                 ? openssl_private_encrypt($chunk, $out, $key)
                 : openssl_public_encrypt($chunk, $out, $key);
