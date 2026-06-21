@@ -110,12 +110,13 @@ class OutPut
                 $val = is_numeric($val) ? "{$val}" : $val;
                 $val = is_null($val) ? "" : $val;
                 $val = is_bool($val) ? ($val ? 1 : 0) : $val;
-                //时间字段统一转时间戳:字段名含 time、或以 _at 结尾(created_at/updated_at 等约定)。
-                //双保险:仅当值确为完整日期时间(Y-m-d H:i:s,见 CheckVal::isDateTime)才转,
-                //非日期时间值(如 lifetime=3600 / timezone=Asia/Shanghai)原样不动,杜绝误转。
-                //用 _at 后缀(非裸 at)精确命中约定,避免 format/lat/seat 等正好以 at 结尾的字段被误命中。
+                //时间字段统一转时间戳:字段名含 time、或时间戳约定后缀——
+                //  snake 的 `_at`(created_at) 或 camel 的 `xAt`(createdAt,业务可能直接返回无下划线小驼峰)。
+                //用"小写字母+At"识别 camel,避免 format/seat/lat 这类纯小写 at 结尾、也无大写 A/下划线的字段被误命中
+                //(否则它们值为空时会被下面 empty→'0' 那条误改)。再叠加内容闸 CheckVal::isDateTime(完整 Y-m-d H:i:s)双保险:
+                //名字匹配但值非完整日期时间(如 created_at 实为空)走 empty→'0'，其余非日期时间值原样不动。
                 $lkey = strtolower($key);
-                if (strpos($lkey, 'time') !== false || str_ends_with($lkey, '_at')) {
+                if (strpos($lkey, 'time') !== false || preg_match('/(_at|[a-z]At)$/', $key)) {
                     if (CheckVal::isDateTime($val)) {
                         $val = strtotime($val).'';
                     } elseif ($val == GlobalConf::DEFAULT_DATE_TIME || empty($val)) {
