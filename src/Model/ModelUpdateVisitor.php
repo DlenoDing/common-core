@@ -12,10 +12,35 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Model;
 
 use Hyperf\Database\Commands\Ast\ModelUpdateVisitor as Visitor;
+use Hyperf\Database\Commands\ModelOption;
 use Hyperf\Stringable\Str;
 
 class ModelUpdateVisitor extends Visitor
 {
+    /**
+     * gen:model 时,decimal 列改用「列的真实小数位」作 cast 精度,
+     * 避免父类对所有 decimal 写死 `decimal:2` —— 那样 `decimal(20,8)`(金额/汇率) 生成的 cast 只留 2 位、
+     * 运行时高精度值被截。
+     * 做法:父类 rewriteCasts 循环里「$column['cast'] 已存在则直接采用、跳过 formatDatabaseType」,
+     * 故此处在构造时按 column_type(如 `decimal(20,8)`)解析真实 scale 并预置 cast;
+     * 已显式带 cast 的列(--force-casts/既有)不覆盖;拿不到 column_type 时回退 2。
+     * @param array $columns
+     */
+    public function __construct(string $class, array $columns, ModelOption $option)
+    {
+        foreach ($columns as $i => $column) {
+            if (empty($column['cast']) && ($column['data_type'] ?? '') === 'decimal') {
+                $scale = 2;
+                //column_type 形如 decimal(20,8) / decimal(10,4)；第二个数=小数位
+                if (preg_match('/^decimal\(\s*\d+\s*,\s*(\d+)\s*\)/i', (string) ($column['column_type'] ?? ''), $m)) {
+                    $scale = (int) $m[1];
+                }
+                $columns[$i]['cast'] = 'decimal:' . $scale;
+            }
+        }
+        parent::__construct($class, $columns, $option);
+    }
+
     protected function formatDatabaseType(string $type): ?string
     {
         switch ($type) {
@@ -26,7 +51,7 @@ class ModelUpdateVisitor extends Visitor
             case 'bigint':
                 return 'integer';
             case 'decimal':
-                // 设置为 decimal，并设置对应精度
+                //兜底:正常已由构造按真实 scale 预置 cast;此处仅在拿不到 column_type 时回退 :2
                 return 'decimal:2';
             case 'float':
             case 'double':
