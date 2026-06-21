@@ -17,8 +17,9 @@ class DcsLock
 
     private static $unlock = [];
 
-    //解锁 Lua 脚本的 SHA1（进程级缓存，用于 EVALSHA，避免每次重传脚本）
-    private static ?string $luaSha = null;
+    //续约 expire 瞬时失败的重试间隔(毫秒)。远小于续约安全缓冲(恒 ~2s)，
+    //以便在锁 TTL 到期前的窗口内多次重试，抢在过期前续上。
+    private const RENEWAL_RETRY_MS = 500;
 
     //是否支持浮点阻塞超时（进程级缓存：Redis 6.0+ 服务端 + phpredis 5.3.0+ 客户端）
     private static ?bool $floatTimeout = null;
@@ -46,12 +47,8 @@ class DcsLock
             if ($time >= 10) {
                 $renewalTime = ($time - 2) * 1000;
                 $cid         = SwooleCo::getCid();
-                \Swoole\Timer::after(
-                    $renewalTime,
-                    function () use ($lockKey, $uuid, $time, $renewalTime, $cid) {
-                        self::renewalLock($lockKey, $uuid, $time, $renewalTime, $cid);
-                    }
-                );
+                //首次续约与续约链后续排期统一走 scheduleRenewal（延迟=renewalTime）
+                self::scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, $renewalTime);
             }
             //自动解锁
             \Hyperf\Coroutine\defer(
@@ -81,13 +78,63 @@ class DcsLock
             self::unlock($lockKey, $uuid);
             return;
         }
-        $redis = get_inject_obj(RedisFactory::class)->get(
-            config('app.dcslock_redis_pool', 'default')
-        );
-        $redis->expire($lockKey, $time);
+
+        try {
+            $redis  = get_inject_obj(RedisFactory::class)->get(
+                config('app.dcslock_redis_pool', 'default')
+            );
+            $result = self::renewalExpire($redis, $lockKey, $uuid, $time);
+        } catch (\Throwable $e) {
+            //瞬时异常(连接抖动/连接池耗尽等):绝不放弃锁——业务仍在临界区、流程不可控，
+            //放弃会让他人进临界区破坏互斥(比锁提前过期更糟)。改用远小于安全缓冲的间隔重试，
+            //抢在 TTL 到期前续上;重试仍走回本方法，顶部两道闸会重新判定(已解锁/协程已亡则自然停)。
+            Logger::stdoutLog()->warning("DcsLock renewal expire exception [{$lockKey}]: " . $e->getMessage());
+            self::scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, self::RENEWAL_RETRY_MS);
+            return;
+        }
+
+        if (empty($result)) {
+            //value 校验 Lua 返回 0：key 已不存在(到期/被解)或已被他人重获——锁已不归自己。
+            //再续既救不回、又可能误续他人锁 → 停止续约并告警(既成事实，只能让上层知情)。
+            Logger::stdoutLog()->warning("DcsLock renewal: lock lost or not owned, stop renewing [{$lockKey}]");
+            return;
+        }
+
+        //正常续上，排下一次常规续约
         //sleep方式某些情况下会导致::all coroutines (count: *) are asleep - deadlock!
+        self::scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, $renewalTime);
+    }
+
+    /**
+     * 续约 expire：value 校验后再 expire（仅当 key 的 value 仍是本协程 uuid 才续期），
+     * 原子防止「误续他人锁」。Lua 完全不可用时降级为裸 expire(不校验 value，尽力而为)。
+     * @return int|false 1=已续上；0=key 不存在或非本协程持有(应停止续约)；false 仅降级路径下 Lua 不可用时不会出现(已回退裸 expire)
+     */
+    private static function renewalExpire(RedisProxy $redis, string $lockKey, string $uuid, int $time)
+    {
+        /** @lang lua */
+        $script = <<<EOF
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('expire', KEYS[1], ARGV[2]);
+end
+return 0;
+EOF;
+        $ret = self::evalLua($redis, $script, [$lockKey, $uuid, $time], 1);
+        if ($ret === false) {
+            //Lua 完全不可用降级:退回裸 expire(不校验 value，与 _unlock 降级同等限制)
+            $ret = $redis->expire($lockKey, $time);
+        }
+        return $ret;
+    }
+
+    /**
+     * 排定下一次续约 Timer。
+     * @param int $delay 延迟毫秒(正常=renewalTime；瞬时失败重试=RENEWAL_RETRY_MS)
+     */
+    private static function scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, int $delay)
+    {
         \Swoole\Timer::after(
-            $renewalTime,
+            $delay,
             function () use ($lockKey, $uuid, $time, $renewalTime, $cid) {
                 self::renewalLock($lockKey, $uuid, $time, $renewalTime, $cid);
             }
@@ -201,10 +248,11 @@ EOF;
      */
     private static function evalLua(RedisProxy $redis, string $script, array $params, int $numKeys)
     {
-        if (self::$luaSha === null) {
-            self::$luaSha = sha1($script);
-        }
-        $ret = $redis->evalSha(self::$luaSha, $params, $numKeys);
+        //按脚本各自算 SHA1（短串 sha1 微秒级，相对 Redis RTT 可忽略）。
+        //务必 per-script：本类有多个脚本(unlock/续约)，若共用单槽 SHA 会用错脚本的哈希
+        //去 EVALSHA，导致执行成另一脚本（如续约误跑成 unlock 删锁）。
+        $sha = sha1($script);
+        $ret = $redis->evalSha($sha, $params, $numKeys);
         if ($ret === false) {
             $ret = $redis->eval($script, $params, $numKeys);
         }
