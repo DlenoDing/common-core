@@ -11,7 +11,6 @@ declare(strict_types=1);
  * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
  */
 
-use Dleno\CommonCore\Conf\GlobalConf;
 use Dleno\CommonCore\Tools\Client;
 use Hyperf\Context\ApplicationContext;
 use Hyperf\Context\Context;
@@ -153,7 +152,11 @@ if (!function_exists('json_to_array')) {
      */
     function json_to_array($json, $assoc = true)
     {
-        return $json ? (array)\json_decode($json, $assoc) : [];
+        //只对真正的"空"短路(空串/null/false);原用 $json? 会把字符串 '0' 也当空 → 误返 [](应为 [0])。
+        if ($json === '' || $json === null || $json === false) {
+            return [];
+        }
+        return (array)\json_decode($json, $assoc);
     }
 }
 
@@ -251,12 +254,12 @@ if (!function_exists('array_is_list')) {
      */
     function array_is_list($value)
     {
-        $num = count($value);
-        if (!isset($value[0]) || !isset($value[$num - 1])) {
-            return false;
-        }
-        for ($i = 0; $i < $num; $i++) {
-            if (!isset($value[$i])) {
+        //与 PHP8.1 原生 array_is_list 同义:键须为从 0 开始的连续整数。
+        //注:不能用 isset 判断——isset 对值为 null 的元素返 false，会把 [null, 1] 误判为非 list；
+        //此处按顺序 === 比对键(本 polyfill 仅在 PHP<8.1 无原生时才生效)。
+        $expected = 0;
+        foreach ($value as $key => $unused) {
+            if ($key !== $expected++) {
                 return false;
             }
         }
@@ -343,20 +346,19 @@ if (!function_exists('rpc_context_set')) {
 
 if (!function_exists('date_zone')) {
     /**
-     * 将对应$fromZone的时间戳转换成$toZone的日期数据（默认服务器时区转到客户端时区）
+     * 将时间戳格式化为 $toZone 时区的日期数据（默认转到客户端时区）。
+     * 注:时间戳是绝对时刻(UTC 纪元秒)、本身不带时区,故无"来源时区"参数。
      * @param string $format 时间格式，如：Y-m-d H:i:s
      * @param int $timestamp 时间戳
-     * @param string $fromZone America/Denver
-     * @param string $toZone Asia/Shanghai
+     * @param string $toZone Asia/Shanghai（默认客户端时区）
      * @return string|int
      */
-    function date_zone($format, $timestamp, $toZone = null, $fromZone = null)
+    function date_zone($format, $timestamp, $toZone = null)
     {
-        $fromZone    = $fromZone ?? \Hyperf\Config\config('app.default_time_zone', 'UTC');
+        //用 @时间戳 构造(UTC)再 setTimezone 到目标时区格式化;
+        //不受"服务器进程时区 与 app.default_time_zone 是否一致"的影响(原实现 date()+按 fromZone 重解释会引入偏移)。
         $toZone      = $toZone ?? Client::getTimezone();
-        $dateTime    = date(GlobalConf::DATE_TIME_FORMAT, $timestamp);
-        $dateTimeObj = new \DateTime($dateTime, new DateTimeZone($fromZone));
-        $dateTimeObj->setTimezone(new DateTimeZone($toZone));
+        $dateTimeObj = (new \DateTime('@' . (int)$timestamp))->setTimezone(new DateTimeZone($toZone));
         return $dateTimeObj->format($format);
     }
 }
