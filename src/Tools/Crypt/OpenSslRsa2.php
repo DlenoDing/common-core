@@ -4,121 +4,136 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Tools\Crypt;
 
+/**
+ * 通用 RSA 分块加解密工具（变体）。
+ *
+ * 与 {@see OpenSslRsa} 的区别：明文**原样分块**(不先 base64)、密文以 **base64** 整体输出(非 hex)。
+ * 其余一致：密钥由调用方传入(统一 **base64(PEM)**,也容错原始 PEM / 无头尾的裸 base64);
+ * 本类不内置默认密钥、不读 config；分块按"密钥位数"自适应(兼容 1024/2048/4096);
+ * openssl 调用失败返回 false(不再静默拼出垃圾)。
+ */
 class OpenSslRsa2
 {
-    const ENCRYPT_LEN = 117;
-    const DECRYPT_LEN = 128;
+    /** 私钥加密 → base64 密文;失败 false */
+    public static function encryptedByPrivateKey($dataContent, string $privateKey)
+    {
+        return self::chunkEncrypt($dataContent, $privateKey, true);
+    }
 
-    public static $publicKey = '-----BEGIN PUBLIC KEY-----
-MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCnc2SqL+oj590/uZkvuk3Cbrru
-ezbDrTQmd8yu5+atQL5ZGUO4OZ5jJPyyFxAZvLKyqNQQYuf8b4FiOfhnnsLbUUUg
-o8a0OIjVVVh7G4IRG6YiKrCgvJHsKHgUMRkHxQ0KEfWDJxCN+je3L1WIOtHQeqqW
-WtFf/qzoGYkvyijS/wIDAQAB
------END PUBLIC KEY-----';
+    /** 私钥解密 → 明文;失败 false */
+    public static function decryptByPrivateKey($encrypted, string $privateKey)
+    {
+        return self::chunkDecrypt($encrypted, $privateKey, true);
+    }
 
-    public static $privateKey = '-----BEGIN PRIVATE KEY-----
-MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAKdzZKov6iPn3T+5
-mS+6TcJuuu57NsOtNCZ3zK7n5q1AvlkZQ7g5nmMk/LIXEBm8srKo1BBi5/xvgWI5
-+GeewttRRSCjxrQ4iNVVWHsbghEbpiIqsKC8kewoeBQxGQfFDQoR9YMnEI36N7cv
-VYg60dB6qpZa0V/+rOgZiS/KKNL/AgMBAAECgYB8UZ+a+pfKsIoClbi1RowUnkEK
-bU/rVtww8yBzepg4aKjpXWh5jc2Zrgwt7BF4CjBhlBZdVBEHyYE1e/SAec4P8f4+
-hHGvjFP9WhdbpAxSCwNvv17UxNL7QasJesbWhz85hg4sZ4wuAQ090Le3HVREQF7t
-5SQV+f2dPoqgSNdbAQJBANulpiZlY2qmG40o5xogVjhTYF1rhxiUv0fQKFUDku8l
-ezIbo2ZSIhbYzoyJgYbUai0FdbVLbl5dhu1ptxRS/0kCQQDDKjWHpj2JbSfRrHmu
-Ks+O8XggiMLpvFqmCBVqWePh/yAP4QRCFnKNnQqoEkcTj8kGfmmcluPqHpmCyjNT
-TRgHAkEAnPo4UrynXrM0gaA3+m4d8Md12Y5d0O2N/07/ZDLXsl7BO0CReTE998If
-bEVh8vCgqWh7hYRRbtO8+LRTCg1/MQJAN9tryLAuqpeALwWDKfL8xrebnwwlZQpQ
-k3Z60p55l2QShBjtxBByps9Mjn/0sceUTHR/u56ACrDJVOKUQAIvnwJBAJXcfR++
-I8W9NStrSg/P/Dqk4yOJ3DhVUzU8G4qtLwVNWH0a1E15YDvhnl5ToqNkiDIEqfbf
-5E8qiViuModOpaA=
------END PRIVATE KEY-----';
+    /** 公钥加密 → base64 密文;失败 false */
+    public static function encryptedByPublicKey($dataContent, string $publicKey)
+    {
+        return self::chunkEncrypt($dataContent, $publicKey, false);
+    }
+
+    /** 公钥解密 → 明文;失败 false */
+    public static function decryptByPublicKey($encrypted, string $publicKey)
+    {
+        return self::chunkDecrypt($encrypted, $publicKey, false);
+    }
 
     /**
-     * 私钥加密
-     * @param $dataContent
-     * @param $privateKey
-     * @return string
+     * @param bool $usePrivate true=私钥加密;false=公钥加密
+     * @return string|false base64 密文
      */
-    public static function encryptedByPrivateKey($dataContent, $privateKey = null)
+    private static function chunkEncrypt($dataContent, string $key, bool $usePrivate)
     {
-        $privateKey = $privateKey ?: self::$privateKey;
-        $encrypted  = "";
-        $totalLen   = strlen($dataContent);
-        $encryptPos = 0;
-        while ($encryptPos < $totalLen) {
-            openssl_private_encrypt(substr($dataContent, $encryptPos, self::ENCRYPT_LEN), $encryptData, $privateKey);
-            $encrypted  .= $encryptData;
-            $encryptPos += self::ENCRYPT_LEN;
+        $key      = self::pem($key, $usePrivate);
+        $keyBytes = self::keyBytes($key, $usePrivate);
+        if ($keyBytes <= 0) {
+            return false;
+        }
+        $chunk     = $keyBytes - 11;          //PKCS1 v1.5 单块最大明文 = 密钥字节数 - 11
+        $encrypted = '';
+        $total     = strlen((string) $dataContent);
+        for ($pos = 0; $pos < $total; $pos += $chunk) {
+            $part = substr((string) $dataContent, $pos, $chunk);
+            $ok   = $usePrivate
+                ? openssl_private_encrypt($part, $out, $key)
+                : openssl_public_encrypt($part, $out, $key);
+            if (!$ok) {
+                return false;
+            }
+            $encrypted .= $out;
         }
         return base64_encode($encrypted);
     }
 
     /**
-     * 私钥解密
-     * @param $encrypted
-     * @return bool|false|string
+     * @param bool $usePrivate true=私钥解密;false=公钥解密
+     * @return string|false 明文
      */
-    public static function decryptByPrivateKey($encrypted, $privateKey = null)
+    private static function chunkDecrypt($encrypted, string $key, bool $usePrivate)
     {
-        $privateKey = $privateKey ?: self::$privateKey;
-        $decrypt    = "";
-        $encrypted  = base64_decode($encrypted);
-        $totalLen   = strlen($encrypted);
-        $decryptPos = 0;
-        while ($decryptPos < $totalLen) {
-            openssl_private_decrypt(
-                substr($encrypted, $decryptPos, self::DECRYPT_LEN),
-                $decryptData,
-                $privateKey
-            );
-            $decrypt    .= $decryptData;
-            $decryptPos += self::DECRYPT_LEN;
+        $key      = self::pem($key, $usePrivate);
+        $keyBytes = self::keyBytes($key, $usePrivate);
+        if ($keyBytes <= 0) {
+            return false;
         }
-
+        //去空白后严格 base64 解码:非法字符 → false(与 OpenSslRsa 的非法即 false 一致)
+        $enc = preg_replace('/\s+/', '', (string) $encrypted);
+        $bin = base64_decode($enc, true);
+        if ($bin === false) {
+            return false;
+        }
+        $decrypt = '';
+        $total   = strlen($bin);
+        for ($pos = 0; $pos < $total; $pos += $keyBytes) {   //密文一块 = 密钥字节数
+            $block = substr($bin, $pos, $keyBytes);
+            $ok    = $usePrivate
+                ? openssl_private_decrypt($block, $out, $key)
+                : openssl_public_decrypt($block, $out, $key);
+            if (!$ok) {
+                return false;
+            }
+            $decrypt .= $out;
+        }
         return $decrypt;
     }
 
     /**
-     * 公钥加密
-     * @param $dataContent
-     * @return string
+     * 把各种形态的密钥统一规整成 openssl 可用的标准 PEM。兼容:
+     *  1) 完整 PEM(含 -----BEGIN-----/-----END----- 头尾)→ 原样用；
+     *  2) base64(完整 PEM)→ 解码出 PEM；
+     *  3) 仅 base64 内容(无头尾,可能未断行)→ 去空白 + 64 字符断行 + 按公/私钥补头尾,重组标准 PEM。
      */
-    public static function encryptedByPublicKey($dataContent, $publicKey = null)
+    private static function pem($key, bool $usePrivate): string
     {
-        $publicKey  = $publicKey ?: self::$publicKey;
-        $encrypted  = "";
-        $totalLen   = strlen($dataContent);
-        $encryptPos = 0;
-        while ($encryptPos < $totalLen) {
-            openssl_public_encrypt(substr($dataContent, $encryptPos, self::ENCRYPT_LEN), $encryptData, $publicKey);
-            $encrypted  .= $encryptData;
-            $encryptPos += self::ENCRYPT_LEN;
+        $key = trim((string) $key);
+        if ($key === '') {
+            return $key;
         }
-        return base64_encode($encrypted);
+        if (str_contains($key, '-----BEGIN')) {
+            return $key;
+        }
+        $decoded = base64_decode($key, true);
+        if ($decoded !== false && str_contains($decoded, '-----BEGIN')) {
+            return $decoded;
+        }
+        $b64     = preg_replace('/\s+/', '', $key);
+        $wrapped = chunk_split($b64, 64, "\n");
+        $label   = $usePrivate ? 'PRIVATE KEY' : 'PUBLIC KEY';
+        return "-----BEGIN {$label}-----\n{$wrapped}-----END {$label}-----\n";
     }
 
     /**
-     * 公钥解密
-     * @param $encrypted
-     * @param $publicKey
-     * @return bool|false|string
+     * 由密钥推导其字节数(位数/8),用于分块。
+     * @return int 失败返回 0
      */
-    public static function decryptByPublicKey($encrypted, $publicKey = null)
+    private static function keyBytes(string $key, bool $usePrivate): int
     {
-        $publicKey  = $publicKey ?: self::$publicKey;
-        $decrypt    = "";
-        $encrypted  = base64_decode($encrypted);
-        $totalLen   = strlen($encrypted);
-        $decryptPos = 0;
-        while ($decryptPos < $totalLen) {
-            openssl_public_decrypt(
-                substr($encrypted, $decryptPos, self::DECRYPT_LEN),
-                $decryptData,
-                $publicKey
-            );
-            $decrypt    .= $decryptData;
-            $decryptPos += self::DECRYPT_LEN;
+        $res = $usePrivate ? openssl_pkey_get_private($key) : openssl_pkey_get_public($key);
+        if ($res === false) {
+            return 0;
         }
-        return $decrypt;
+        $details = openssl_pkey_get_details($res);
+        $bits    = $details['bits'] ?? 0;
+        return intval($bits / 8);
     }
 }
