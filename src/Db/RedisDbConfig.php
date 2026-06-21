@@ -14,9 +14,6 @@ use function Hyperf\Support\env;
  */
 class RedisDbConfig
 {
-    private static $options = [];
-    private static $pool    = [];
-
     public static function getOptions($poolName, $options = [])
     {
         if (empty($options)) {
@@ -39,18 +36,15 @@ class RedisDbConfig
 
     private static function getDefaultOptions()
     {
-        self::$options = [
+        return [
             \Redis::OPT_PREFIX       => env('APP_NAME', 'PluginBox-API') . ':', //socket-io暂时不支持key前缀
             \Redis::OPT_READ_TIMEOUT => '-1',//读连接不超时，SWOOLE默认60秒
         ];
-
-
-        return self::$options;
     }
 
     private static function getDefaultPool()
     {
-        self::$pool = [
+        return [
             'min_connections' => (int)env('REDIS_MIN_CONNECTION', 10),
             'max_connections' => (int)env('REDIS_MAX_CONNECTION', 100),//高并发下值越大，redis效率越高
             'connect_timeout' => (float)env('REDIS_CONNECT_TIMEOUT', 10.0),
@@ -58,8 +52,5 @@ class RedisDbConfig
             'heartbeat'       => (int)env('REDIS_HEARTBEAT', -1),
             'max_idle_time'   => (float)env('REDIS_MAX_IDLE_TIME', 60.0),
         ];
-
-
-        return self::$pool;
     }
 }

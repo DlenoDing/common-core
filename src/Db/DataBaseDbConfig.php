@@ -14,12 +14,6 @@ use function Hyperf\Support\env;
  */
 class DataBaseDbConfig
 {
-    private static $commands = null;
-    private static $pool     = null;
-    private static $options  = null;
-    private static $read     = null;
-    private static $write    = null;
-
     public static function getCommands($poolName, $commands = [])
     {
         if (empty($commands)) {
@@ -72,7 +66,7 @@ class DataBaseDbConfig
 
     private static function getDefaultCommands()
     {
-        self::$commands = [
+        return [
             'gen:model' => [
                 'path'             => 'app/Model',
                 'inheritance'      => 'BaseModel',
@@ -91,14 +85,11 @@ class DataBaseDbConfig
                 ],
             ],
         ];
-
-
-        return self::$commands;
     }
 
     private static function getDefaultPool()
     {
-        self::$pool = [
+        return [
             'min_connections' => (int)env('DB_MIN_CONNECTION', 1),
             'max_connections' => (int)env('DB_MAX_CONNECTION', 50),
             'connect_timeout' => (float)env('DB_CONNECT_TIMEOUT', 10.0),
@@ -106,13 +97,11 @@ class DataBaseDbConfig
             'heartbeat'       => (int)env('DB_HEARTBEAT', -1),
             'max_idle_time'   => (float)env('DB_MAX_IDLE_TIME', 60.0),
         ];
-
-        return self::$pool;
     }
 
     private static function getDefaultOptions()
     {
-        self::$options = [
+        return [
             /*// 框架默认配置
             \PDO::ATTR_CASE => \PDO::CASE_NATURAL,
             \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
@@ -121,13 +110,11 @@ class DataBaseDbConfig
             // 如果使用的为非原生 MySQL 或云厂商提供的 DB 如从库/分析型实例等不支持 MySQL prepare 协议的, 将此项设置为 true
             \PDO::ATTR_EMULATE_PREPARES => false,*/
         ];
-
-        return self::$options;
     }
 
     private static function getDefaultReadConfig()
     {
-        self::$read = [
+        return [
             'host' => [env('DB_READ_HOST', env('DB_HOST', 'localhost'))],
             'pool' => [
                 'min_connections' => (int)env('DB_READ_MIN_CONNECTION', env('DB_MIN_CONNECTION', 1)),
@@ -138,14 +125,11 @@ class DataBaseDbConfig
                 'max_idle_time'   => (float)env('DB_READ_MAX_IDLE_TIME', env('DB_MAX_IDLE_TIME', 60.0)),
             ],
         ];
-
-
-        return self::$read;
     }
 
     private static function getDefaultWriteConfig()
     {
-        self::$write = [
+        return [
             'host' => [env('DB_WRITE_HOST', env('DB_HOST', 'localhost'))],
             'pool' => [
                 'min_connections' => (int)env('DB_WRITE_MIN_CONNECTION', env('DB_MIN_CONNECTION', 1)),
@@ -156,8 +140,5 @@ class DataBaseDbConfig
                 'max_idle_time'   => (float)env('DB_WRITE_MAX_IDLE_TIME', env('DB_MAX_IDLE_TIME', 60.0)),
             ],
         ];
-
-
-        return self::$write;
     }
 }

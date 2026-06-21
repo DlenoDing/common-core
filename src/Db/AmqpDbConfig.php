@@ -14,10 +14,6 @@ use function Hyperf\Support\env;
  */
 class AmqpDbConfig
 {
-    private static $params     = [];
-    private static $pool       = [];
-    private static $concurrent = [];
-
     public static function getParams($poolName, $params = [])
     {
         if (empty($params)) {
@@ -50,7 +46,7 @@ class AmqpDbConfig
 
     private static function getDefaultParams()
     {
-        self::$params = [
+        return [
             'insist'              => false,
             'login_method'        => 'AMQPLAIN',
             'login_response'      => null,
@@ -64,12 +60,11 @@ class AmqpDbConfig
             'channel_rpc_timeout' => 0.0,
             'max_idle_channels'   => (int)env('AMQP_MAX_IDLE_CHANNELS', 10),
         ];
-        return self::$params;
     }
 
     private static function getDefaultPool()
     {
-        self::$pool = [
+        return [
             'connections'     => (int)env('AMQP_CONNECTION', 2),
             'min_connections' => (int)env('AMQP_MIN_CONNECTION', 1),
             'max_connections' => (int)env('AMQP_MAX_CONNECTION', 10),//连接池最大连接数
@@ -77,14 +72,12 @@ class AmqpDbConfig
             'wait_timeout'    => (float)env('AMQP_WAIT_TIMEOUT', 3.0),
             'heartbeat'       => (int)env('AMQP_HEARTBEAT', 15),
         ];
-        return self::$pool;
     }
 
     private static function getDefaultConcurrent()
     {
-        self::$concurrent = [
+        return [
             'limit' => 1,
         ];
-        return self::$concurrent;
     }
 }
