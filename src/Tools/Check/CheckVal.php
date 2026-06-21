@@ -318,13 +318,15 @@ class CheckVal
         }
         //获取字符串长度
         $length = strlen(trim($string));
-        if ($min > 0 && $max > 0) {
-            return (($length >= (int)$min) && ($length <= (int)$max)) ? true : false;
-        } elseif ($min > 0 && $max == 0) {
-            return ($length >= (int)$min) ? true : false;
-        } elseif ($max > 0 && $min == 0) {
-            return ($length <= (int)$max) ? true : false;
+        //min/max 为 0 表示该侧不设限;两侧都不设限(0,0)→ 无约束,任意字符串通过。
+        //逐侧判定保证永远显式返回 bool(原写法漏了 min=0&max=0 分支会隐式返回 null)。
+        if ($min > 0 && $length < (int)$min) {
+            return false;
         }
+        if ($max > 0 && $length > (int)$max) {
+            return false;
+        }
+        return true;
     }
 
     /**
