@@ -19,7 +19,6 @@ use Hyperf\Serializer\SerializerFactory;
 use Hyperf\Coroutine\Coroutine;
 use Hyperf\Contract\NormalizerInterface;
 use Hyperf\Database\Commands\Ast\ModelUpdateVisitor as AstModelUpdateVisitor;
-use Hyperf\Database\Model\Builder;
 use Dleno\CommonCore\Model\ModelUpdateVisitor;
 use Dleno\CommonCore\Websocket\Contract\WsHookInterface;
 use Dleno\CommonCore\Websocket\Hook\AbstractWsHook;
@@ -69,7 +68,8 @@ class ConfigProvider
                     'class_map'          => [
                         // 需要映射的类名 => 类所在的文件地址
                         Coroutine::class               => __DIR__ . '/class_map/Hyperf/Coroutine/Coroutine.php',
-                        Builder::class                 => __DIR__ . '/class_map/Hyperf/Database/Model/Builder.php',
+                        //Builder 不再整类 fork:自定义方法已下沉到 Dleno\CommonCore\Model\EloquentBuilder(继承框架 Builder),
+                        //由 BaseModel::newModelBuilder() 注入;框架 Builder 修复/安全补丁自动继承。
                     ],
                     // ignore_annotations 数组内的注解都会被注解扫描器忽略
                     'ignore_annotations' => [

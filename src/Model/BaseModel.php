@@ -27,9 +27,22 @@ use function Hyperf\Support\class_basename;
  * php bin/hyperf.php gen:model {table_name} --path app/Model/{Module}
  *
  * @package Dleno\CommonCore\Model
+ * @mixin \Dleno\CommonCore\Model\EloquentBuilder  自定义查询构造器(pager/groupCount/insertOnDuplicate/whereFullTextDiy 等),令 IDE 可提示这些方法
  */
 class BaseModel extends Model
 {
+    /**
+     * 用项目自定义查询构造器(替代原 class_map 整类 fork)。
+     * 注:Hyperf 的模型构造器工厂钩子是 newModelBuilder()(非 Laravel 的 newEloquentBuilder),
+     * newModelQuery()→newModelBuilder() 全链路只认这个方法,覆盖它才能让自定义 Builder 真正生效。
+     * @param \Hyperf\Database\Query\Builder $query
+     * @return EloquentBuilder
+     */
+    public function newModelBuilder($query)
+    {
+        return new EloquentBuilder($query);
+    }
+
     //分表模式：0不分表1按年2按月3按日4按周5固定数量  [分表]
     const SPLIT_MODE_NO    = 0;
     const SPLIT_MODE_YEAR  = 1;
