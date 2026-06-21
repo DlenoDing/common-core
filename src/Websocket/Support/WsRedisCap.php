@@ -11,7 +11,7 @@ use Hyperf\Redis\Redis;
  *
  * 目前只探 HEXPIRE（Redis 7.4+ 的 hash field 级过期）。
  * 用"能力探测"而非版本号字符串：托管/分支版(阿里云/ElastiCache/KeyDB/Dragonfly)版本号不可靠；
- * 且统一走 rawCommand,绕开 phpredis 客户端是否实现 hExpire() 方法的差异(本机 phpredis 6.2 就没有该方法)。
+ * 且统一走 rawCommand,绕开 phpredis 客户端是否实现 hExpire() 方法的差异(部分 phpredis 版本未实现该方法)。
  */
 class WsRedisCap
 {

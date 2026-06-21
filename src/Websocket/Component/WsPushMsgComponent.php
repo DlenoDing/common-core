@@ -77,6 +77,8 @@ class WsPushMsgComponent extends BaseCoreComponent
      */
     public function checkOnlineByDim(string $dim, array $values, int $concurrent = 100)
     {
+        //去重:Parallel 以维度值为结果键,重复值会相互覆盖、漏掉条目
+        $values   = array_values(array_unique($values));
         $wssCpt   = get_inject_obj(WsServerComponent::class);
         $wstkCpt  = get_inject_obj(WsTokenComponent::class);
         $servers  = $wssCpt->getServerList();
@@ -167,6 +169,10 @@ class WsPushMsgComponent extends BaseCoreComponent
         $ret = [];
         if (!empty($clients)) {//指定
             foreach ($clients as $sv => $fds) {
+                //空 fd 数组(误传)→ 跳过,避免 [] ?: '-1' 退化成"关该 server 全体";"关全体"只由显式 '-1' 表达
+                if (is_array($fds) && count($fds) === 0) {
+                    continue;
+                }
                 $job = new CloseMessageJob($fds ?: '-1');
                 $job->setQueue(self::getQueue($sv));
                 $ret[] = AsyncQueue::push($job);
@@ -200,13 +206,17 @@ class WsPushMsgComponent extends BaseCoreComponent
     {
         $message = $this->formatMessage($cmd, $message);
 
-        $servers = get_inject_obj(WsServerComponent::class)->getServerList();
+        $wssCpt  = get_inject_obj(WsServerComponent::class);
+        $servers = $wssCpt->getServerList();
+        //排除FD 的 sv 主动归一化(getServerKey 幂等),避免调用方传原始点分 IP 导致排除静默失效
+        $exclSv  = isset($nsfd['sv']) ? $wssCpt->getServerKey($nsfd['sv']) : null;
+        $exclFd  = (int) ($nsfd['fd'] ?? 0);
         $ret     = [];
         foreach ($servers as $server) {
             //每台一份独立副本:nfd(不推送的FD)只对其所在服务器有效,不能串到其它服务器的 Job(否则误排除无关连接)
             $msg = $message;
-            if (($nsfd['sv'] ?? '') == $server) {//不推送的FD,必须与所在服务器对应(sv 须为 getServerKey 归一化后的值)
-                $msg['nfd'] = (int) ($nsfd['fd'] ?? 0);
+            if ($exclSv !== null && $exclSv === $server) {//不推送的FD,必须与所在服务器对应
+                $msg['nfd'] = $exclFd;
             }
             //分发到对应服务器的消息队列
             $job = new PushMessageJob($cmd, $msg);

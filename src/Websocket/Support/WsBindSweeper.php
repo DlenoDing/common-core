@@ -36,7 +36,7 @@ class WsBindSweeper
 
     //业务可配(默认值);按业务量在 config/autoload/websocket.php 的 'sweep' 段调
     const DEFAULT_SCAN_COUNT     = 500;           // SSCAN 每批(对注册表 SET,远小于全库)
-    const DEFAULT_SWEEP_INTERVAL = 60;            // 两次清扫最小间隔(秒)，与注册循环(15s)解耦
+    const DEFAULT_SWEEP_INTERVAL = 60;            // 两次清扫最小间隔(秒)，与注册循环(SERVER_REG_LIMIT/2)解耦
 
     private static int $lastSweepAt = 0;
 

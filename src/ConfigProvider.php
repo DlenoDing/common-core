@@ -87,7 +87,8 @@ class ConfigProvider
      *  - http server(ENABLE_HTTP) → InitMiddleware
      *  - ws   server(ENABLE_WS)   → WebSocketAuthMiddleware（握手鉴权）
      * 各有独立 env 开关、默认开；特殊需求时置 false 即不再自动注入（业务自行在 middlewares.php 接管）。
-     * 与 app config/autoload/middlewares.php 为追加合并（包内的排在前、业务的追加在后、按类名去重）。
+     * 与 app config/autoload/middlewares.php 为追加合并（包内的排在前、业务的追加在后）——
+     * **Hyperf 对此普通中间件列表不自动去重**：要自行接管请用上述 env 关掉基座注入，切勿再手动追加同名中间件（否则会执行两次）。
      */
     private function autoMiddlewares(): array
     {
