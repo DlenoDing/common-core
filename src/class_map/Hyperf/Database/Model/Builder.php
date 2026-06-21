@@ -1661,7 +1661,8 @@ class Builder
 
 
     /**
-     * get sql
+     * 把绑定值内插回 SQL 得到"可读完整 SQL"——**仅用于日志/调试展示**。
+     * 内插**未做转义**，绝不可把其返回值拿去执行(会造成 SQL 注入)；执行一律用 toSql()+getBindings() 走绑定。
      * @return string
      */
     public function getSql()
@@ -1727,14 +1728,16 @@ class Builder
             }
         }
 
-        $sql = $builder->select($countField)
-                       ->getSql();
+        //用占位 SQL + 绑定值(原样安全传入),杜绝把绑定值内插回 SQL 裸执行导致的注入
+        $builder  = $builder->select($countField);
+        $sql      = $builder->toSql();        // 带 ? 占位
+        $bindings = $builder->getBindings();  // 对应绑定值
 
         $count = Db::connection(
             $this->getModel()
                  ->getConnectionName()
         )
-                   ->select('select count(*) as aggregate from(' . $sql . ') t where 1');
+                   ->select('select count(*) as aggregate from(' . $sql . ') t where 1', $bindings);
         $count = $count[0]['aggregate'] ?? 0;
 
         return $count;
