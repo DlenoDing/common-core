@@ -8,6 +8,7 @@ use Hyperf\AsyncQueue\Driver\DriverInterface;
 use Hyperf\Contract\ConfigInterface;
 use Hyperf\Contract\StdoutLoggerInterface;
 use Hyperf\Process\AbstractProcess;
+use Hyperf\Process\ProcessManager;
 use Psr\Container\ContainerInterface;
 
 class BaseQueueConsumer extends AbstractProcess
@@ -63,6 +64,11 @@ class BaseQueueConsumer extends AbstractProcess
 
     protected function reloadChannels($i = null)
     {
+        //进程进入停止流程(ProcessManager::setRunning(false))后不再 reload/重排 Timer——
+        //与 Driver::consume 的 while(isRunning()) 一致,避免在退出中的进程上空跑 reload 并续命 Timer。
+        if (!ProcessManager::isRunning()) {
+            return;
+        }
         $i = is_null($i) ? $this->reloadCount : $i;
 
         $handleTimeout = (intval($this->config['handle_timeout'] ?? 60) + 2) * 1000;
