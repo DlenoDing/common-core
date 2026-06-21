@@ -172,9 +172,12 @@ if (!function_exists('array_to_xml')) {
             $xml = new \SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><xml></xml>');
         }
         foreach ($data as $key => $value) {
+            //数字键(list 元素)用父级名作元素名;顶层数字键无父名时兜底 'item'，
+            //避免 addChild(null) 在 PHP8 抛 TypeError(addChild 第一参须为非空 string)。
+            $numericName = $parentKey ?? 'item';
             if (is_array($value)) {
                 if (is_numeric($key)) {
-                    array_to_xml($value, $xml->addChild($parentKey), $parentKey);
+                    array_to_xml($value, $xml->addChild($numericName), $numericName);
                 } else {
                     if (array_is_list($value)) {
                         array_to_xml($value, $xml, $key);
@@ -183,11 +186,8 @@ if (!function_exists('array_to_xml')) {
                     }
                 }
             } else {
-                if (is_numeric($key)) {
-                    $xml->addChild($parentKey, htmlspecialchars($value . ''));
-                } else {
-                    $xml->addChild($key, htmlspecialchars($value . ''));
-                }
+                $name = is_numeric($key) ? $numericName : $key;
+                $xml->addChild($name, htmlspecialchars($value . ''));
             }
         }
         //仅在根部把整棵树序列化为字符串;内层递归只需借 addChild 建树(其返回值本就被忽略),
