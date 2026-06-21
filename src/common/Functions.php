@@ -214,7 +214,29 @@ if (!function_exists('xml_to_array')) {
         if ($obj === false) {
             return [];                                     //畸形/无法解析 → 返回 []，避免向下传 false
         }
-        return json_to_array(json_encode($obj));
+        $arr = json_to_array(json_encode($obj));
+        if (!is_array($arr)) {
+            return $arr;                                   //标量根(如 <root>text</root>)原样返回
+        }
+        //SimpleXML→json 把"空节点"(<a></a>/<a/>)表示为空对象 {} → 解码成空数组 []；
+        //统一归一化为空字符串 ''(只转"作为值的空数组"，非空数组/列表递归进去；顶层容器保持数组，
+        //保证调用方 foreach 安全)。
+        $emptyToStr = function ($v) use (&$emptyToStr) {
+            if (!is_array($v)) {
+                return $v;
+            }
+            if ($v === []) {
+                return '';
+            }
+            foreach ($v as $k => $vv) {
+                $v[$k] = $emptyToStr($vv);
+            }
+            return $v;
+        };
+        foreach ($arr as $k => $v) {
+            $arr[$k] = $emptyToStr($v);
+        }
+        return $arr;
     }
 }
 
