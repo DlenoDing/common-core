@@ -40,16 +40,39 @@ class ErrorOutLog
                 $trace = str_replace(BASE_PATH, '', $trace);
                 $trace = explode("\n", $trace);
 
+                //遍历 previous 异常链:重包装(如 RpcMqCall 归一成 ServerException)时原始异常挂在 previous,
+                //此处把原始异常的 类型/code/message/出错点/堆栈 一并落日志,保留真实出错位置便于排障。
+                $causes = [];
+                $prev   = $throwable->getPrevious();
+                while ($prev !== null) {
+                    $causes[] = str_replace(
+                        [BASE_PATH, PHP_EOL, "\r"],
+                        ['', ' ', ''],
+                        sprintf(
+                            '%s(%s): %s[%s] in %s | %s',
+                            get_class($prev),
+                            $prev->getCode(),
+                            $prev->getMessage(),
+                            $prev->getLine(),
+                            $prev->getFile(),
+                            $prev->getTraceAsString()
+                        )
+                    );
+                    $prev = $prev->getPrevious();
+                }
+
                 //系统错误日志
+                $logMsg = sprintf(
+                    'Server::%s||Message::%s||Trace::%s',
+                    $server,
+                    $message,
+                    array_to_json($trace)
+                );
+                if (!empty($causes)) {
+                    $logMsg .= '||Cause::' . array_to_json($causes);
+                }
                 Logger::systemLog(Logger::SYSTEM_CHANNEL_EXCEPTION)
-                      ->{$level}(
-                          sprintf(
-                              'Server::%s||Message::%s||Trace::%s',
-                              $server,
-                              $message,
-                              array_to_json($trace)
-                          )
-                      );
+                      ->{$level}($logMsg);
 
                 //正确时输出调用的类和方法
                 $mca = Server::getRouteMca();

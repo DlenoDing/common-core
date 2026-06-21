@@ -47,7 +47,8 @@ class RpcMqCall
                         $class->{$callback[1]}($data);
                     }
                 } catch (\Throwable $t) {
-                    throw new ServerException($className.'::'.$callback[1]."\r\n".$t->getMessage());
+                    //保留原始异常(类型/code/堆栈)为 previous,ErrorOutLog 会一并记日志,便于定位真实出错点
+                    throw new ServerException($className.'::'.$callback[1]."\r\n".$t->getMessage(), 0, [], [], $t);
                 }
             }
             //发送失败一律返回 false(callback 仅作失败处理钩子,不改变"发送失败"的结果),
@@ -92,7 +93,8 @@ class RpcMqCall
                     });
                 }
             }
-            throw new ServerException($className.'::'.$callback[1]."\r\n".$e->getMessage());
+            //保留原始异常(类型/code/堆栈)为 previous,ErrorOutLog 会一并记日志,便于定位真实出错点
+            throw new ServerException($className.'::'.$callback[1]."\r\n".$e->getMessage(), 0, [], [], $e);
         }
     }
 }
