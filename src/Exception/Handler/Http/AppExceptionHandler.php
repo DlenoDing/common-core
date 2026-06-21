@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
-use Dleno\CommonCore\Conf\RequestConf;
-use Hyperf\Context\Context;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Exception\AppException;
-use Dleno\CommonCore\Tools\OutPut;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
@@ -21,6 +17,8 @@ use Throwable;
  */
 class AppExceptionHandler extends ExceptionHandler
 {
+    use HttpErrorResponder;
+
     /**
      * Handle the exception, and return the specified result.
      * @param AppException $throwable
@@ -36,15 +34,7 @@ class AppExceptionHandler extends ExceptionHandler
         $code    = $code ?: RcodeConf::ERRNO_NORMAL;
 
         //数据返回
-        if (Context::get(RequestConf::OUTPUT_HTML)) {
-            $output   = $message;
-            $response = $response->withoutHeader('Content-Type')
-                                 ->withHeader('Content-Type', 'text/html; charset=utf-8');
-        } else {
-            $output = OutPut::outJsonToError($message, $code, $throwable->getThrowData(), $throwable->getThrowTrace());
-        }
-        return $response->withStatus(200)
-                        ->withBody(new SwooleStream($output));
+        return $this->respond($response, $message, (int) $code, 200, $throwable->getThrowData(), $throwable->getThrowTrace());
     }
 
     /**

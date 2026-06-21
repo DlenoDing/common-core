@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
-use Dleno\CommonCore\Conf\RequestConf;
-use Hyperf\Context\Context;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Exception\Http\HttpException;
 use Dleno\CommonCore\Tools\Language;
-use Dleno\CommonCore\Tools\OutPut;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
@@ -21,6 +17,8 @@ use Throwable;
  */
 class HttpExceptionHandler extends \Hyperf\HttpServer\Exception\Handler\HttpExceptionHandler
 {
+    use HttpErrorResponder;
+
     /**
      * Handle the exception, and return the specified result.
      * @param HttpException $throwable
@@ -35,20 +33,12 @@ class HttpExceptionHandler extends \Hyperf\HttpServer\Exception\Handler\HttpExce
         $code       = $throwable->getCode();
         $code       = $code?:RcodeConf::ERROR_SERVER;
 
-        if (Context::get(RequestConf::OUTPUT_HTML)) {
-            $output   = $message;
-            $response = $response->withoutHeader('Content-Type')
-                                 ->withHeader('Content-Type', 'text/html; charset=utf-8');
-        } else {
-            $output = OutPut::outJsonToError($message, $code);
-        }
-
         //HTTP status 必须是合法状态码(100–599);若业务误用 HttpException 带越界码(如业务码 4001 / <100),
         //Swoole 发送端会产出损坏响应(客户端收到 -3 重置、空 body)→ 越界时 status 回退 500,
         //body 仍保留原 $code(含业务码),既给干净错误响应、又不丢业务码语义。
         $status = ($code >= 100 && $code <= 599) ? (int) $code : RcodeConf::ERROR_SERVER;
 
-        return $response->withStatus($status)->withBody(new SwooleStream($output));
+        return $this->respond($response, $message, (int) $code, $status);
     }
 
     /**

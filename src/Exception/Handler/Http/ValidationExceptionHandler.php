@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
-use Dleno\CommonCore\Conf\RequestConf;
-use Hyperf\Context\Context;
 use Hyperf\Validation\ValidationException;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
-use Dleno\CommonCore\Tools\OutPut;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
@@ -20,6 +16,8 @@ use Throwable;
  */
 class ValidationExceptionHandler extends \Hyperf\Validation\ValidationExceptionHandler
 {
+    use HttpErrorResponder;
+
     /**
      * Handle the exception, and return the specified result.
      * @param ValidationException $throwable
@@ -31,15 +29,7 @@ class ValidationExceptionHandler extends \Hyperf\Validation\ValidationExceptionH
         /** @var ValidationException $throwable */
         $message = $throwable->validator->errors()
                                         ->first();
-        if (Context::get(RequestConf::OUTPUT_HTML)) {
-            $output   = $message;
-            $response = $response->withoutHeader('Content-Type')
-                                 ->withHeader('Content-Type', 'text/html; charset=utf-8');
-        } else {
-            $output = OutPut::outJsonToError($message, RcodeConf::ERRNO_PARAMS);
-        }
-        return $response->withStatus(200)
-                        ->withBody(new SwooleStream($output));
+        return $this->respond($response, $message, RcodeConf::ERRNO_PARAMS);
     }
 
     /**

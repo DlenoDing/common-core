@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
-use Dleno\CommonCore\Conf\RequestConf;
-use Hyperf\Context\Context;
 use Hyperf\ExceptionHandler\ExceptionHandler;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
-use Dleno\CommonCore\Tools\OutPut;
 use Dleno\CommonCore\Tools\Output\ErrorOutLog;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
@@ -21,6 +17,8 @@ use Throwable;
  */
 class DefaultExceptionHandler extends ExceptionHandler
 {
+    use HttpErrorResponder;
+
     /**
      * @param Throwable $throwable
      * @param ResponseInterface $response
@@ -35,16 +33,7 @@ class DefaultExceptionHandler extends ExceptionHandler
         ErrorOutLog::writeLog($throwable, ErrorOutLog::LOG_ALERT);
 
         //数据返回
-        $message = 'Internal Server Error';
-        if (Context::get(RequestConf::OUTPUT_HTML)) {
-            $output   = $message;
-            $response = $response->withoutHeader('Content-Type')
-                                 ->withHeader('Content-Type', 'text/html; charset=utf-8');
-        } else {
-            $output = OutPut::outJsonToError($message, RcodeConf::ERROR_SERVER);
-        }
-        return $response->withStatus(RcodeConf::ERROR_SERVER)
-                        ->withBody(new SwooleStream($output));
+        return $this->respond($response, 'Internal Server Error', RcodeConf::ERROR_SERVER, RcodeConf::ERROR_SERVER);
     }
 
     public function isValid(Throwable $throwable): bool

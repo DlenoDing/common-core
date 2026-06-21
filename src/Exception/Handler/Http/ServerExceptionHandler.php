@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Exception\Handler\Http;
 
-use Dleno\CommonCore\Conf\RequestConf;
-use Hyperf\Context\Context;
 use Hyperf\ExceptionHandler\ExceptionHandler;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Annotation\ExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Exception\ServerException;
-use Dleno\CommonCore\Tools\OutPut;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
@@ -21,6 +17,8 @@ use Throwable;
  */
 class ServerExceptionHandler extends ExceptionHandler
 {
+    use HttpErrorResponder;
+
     /**
      * @param ServerException $throwable
      * @param ResponseInterface $response
@@ -35,21 +33,7 @@ class ServerExceptionHandler extends ExceptionHandler
         $code = $code ?: RcodeConf::ERRNO_NORMAL;
 
         //数据返回
-        $message = 'System Error';
-        if (Context::get(RequestConf::OUTPUT_HTML)) {
-            $output   = $message;
-            $response = $response->withoutHeader('Content-Type')
-                                 ->withHeader('Content-Type', 'text/html; charset=utf-8');
-        } else {
-            $output = OutPut::outJsonToError(
-                $message,
-                $code,
-                $throwable->getThrowData(),
-                $throwable->getThrowTrace()
-            );
-        }
-        return $response->withStatus(200)
-                        ->withBody(new SwooleStream($output));
+        return $this->respond($response, 'System Error', (int) $code, 200, $throwable->getThrowData(), $throwable->getThrowTrace());
     }
 
     public function isValid(Throwable $throwable): bool
