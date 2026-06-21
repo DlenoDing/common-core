@@ -201,7 +201,20 @@ if (!function_exists('xml_to_array')) {
      */
     function xml_to_array($xml)
     {
-        return json_to_array(json_encode(simplexml_load_string($xml, null, LIBXML_NOCDATA)));
+        $xml = (string) $xml;
+        if ($xml === '') {
+            return [];
+        }
+        //LIBXML_NONET:禁止解析时访问网络(纵深防御 XXE/SSRF；现代 libxml≥2.9 默认已不展开外部实体，
+        //此处不加 LIBXML_NOENT 即不会解析实体，再加 NONET 显式封网)。
+        $prev = libxml_use_internal_errors(true);          //抑制畸形 XML 的 PHP Warning，改入可控错误队列
+        $obj  = simplexml_load_string($xml, null, LIBXML_NOCDATA | LIBXML_NONET);
+        libxml_clear_errors();
+        libxml_use_internal_errors($prev);
+        if ($obj === false) {
+            return [];                                     //畸形/无法解析 → 返回 []，避免向下传 false
+        }
+        return json_to_array(json_encode($obj));
     }
 }
 
