@@ -43,16 +43,15 @@ class CheckOnlineJob extends BaseJob
         if ($this->fds === '-1' || $this->fds === -1) {
             //检查当前服务器的所有人:先汇总全部记录的客户端,再一次批量核验
             $all    = [];
+            //按游标遍历直到 cursor 归 0:不能以「本批为空」为终止——getClients 过滤过期连接 + phpredis 默认
+            //SCAN_NORETRY 空批,都可能在游标未尽时返回空,以空批终止会漏核验连接、致全量在线统计偏少。
             $cursor = null;
-            while (true) {
+            do {
                 $clients = $wssCpt->getClients($cursor, 100);
-                if (empty($clients)) {
-                    break;
-                }
                 foreach ($clients as $fd) {
                     $all[] = (int)$fd;
                 }
-            }
+            } while ((int) $cursor !== 0);
             $this->checkAndSet($redis, $serverKey, $all);
         } else {
             $fds = is_array($this->fds) ? $this->fds : [$this->fds];

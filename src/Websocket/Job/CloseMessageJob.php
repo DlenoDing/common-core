@@ -39,12 +39,11 @@ class CloseMessageJob extends BaseJob
         if ($this->fds == '-1') {
             $wssCpt = get_inject_obj(WsServerComponent::class);
             //发送给当前服务器的所有人
+            //按游标遍历直到 cursor 归 0:不能以「本批为空」为终止——getClients 会过滤过期连接、
+            //phpredis 默认 SCAN_NORETRY 也可能返回空批,二者都可能在游标未尽时返回空,以空批终止会漏关连接。
             $cursor = null;
-            while (true) {
+            do {
                 $clients = $wssCpt->getClients($cursor, 100);
-                if (empty($clients)) {
-                    break;
-                }
                 foreach ($clients as $client) {
                     try {
                         $pmCpt->close($client);
@@ -53,7 +52,7 @@ class CloseMessageJob extends BaseJob
                               ->info(array_to_json(['msg' => $e->getMessage()]));
                     }
                 }
-            }
+            } while ((int) $cursor !== 0);
         } else {
             if (!is_array($this->fds)) {
                 $this->fds = [$this->fds];
