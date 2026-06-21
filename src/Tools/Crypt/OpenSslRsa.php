@@ -67,7 +67,7 @@ class OpenSslRsa
      */
     private static function chunkEncrypt($dataContent, string $key, bool $usePrivate)
     {
-        $key         = self::pem($key);
+        $key         = self::pem($key, $usePrivate);
         $dataContent = base64_encode((string) $dataContent);
         $encrypted   = '';
         $total       = strlen($dataContent);
@@ -90,7 +90,7 @@ class OpenSslRsa
      */
     private static function chunkDecrypt($encrypted, string $key, bool $usePrivate)
     {
-        $key      = self::pem($key);
+        $key      = self::pem($key, $usePrivate);
         $keyBytes = self::keyBytes($key, $usePrivate);
         if ($keyBytes <= 0) {
             return false;
@@ -115,17 +115,32 @@ class OpenSslRsa
     }
 
     /**
-     * 密钥参数统一为 base64(PEM)(两系统间传输用 base64);此处解码回 PEM 供 openssl 使用。
-     * 容错:若传入的本就是原始 PEM(以 -----BEGIN 开头),原样返回。
+     * 把各种形态的密钥统一规整成 openssl 可用的标准 PEM。兼容:
+     *  1) 完整 PEM(含 -----BEGIN-----/-----END----- 头尾,已断行)→ 原样用；
+     *  2) base64(完整 PEM)(两系统间传输的默认形式)→ 解码出 PEM；
+     *  3) 仅 base64 内容(无头尾,可能未断行)→ 去空白、按 64 字符断行、补对应头尾,重组标准 PEM。
+     * 头尾按公/私钥取 PUBLIC KEY / PRIVATE KEY(现代 SPKI/PKCS8 标签)。
      */
-    private static function pem($key): string
+    private static function pem($key, bool $usePrivate): string
     {
-        $key = (string) $key;
-        if (str_starts_with(ltrim($key), '-----BEGIN')) {
+        $key = trim((string) $key);
+        if ($key === '') {
             return $key;
         }
+        //1) 已是完整 PEM
+        if (str_contains($key, '-----BEGIN')) {
+            return $key;
+        }
+        //2) base64(完整 PEM):解码后含 BEGIN 头
         $decoded = base64_decode($key, true);
-        return $decoded === false ? $key : $decoded;
+        if ($decoded !== false && str_contains($decoded, '-----BEGIN')) {
+            return $decoded;
+        }
+        //3) 仅 base64 内容(无头,可能未断行):去空白 + 64 字符断行 + 补头尾
+        $b64     = preg_replace('/\s+/', '', $key);
+        $wrapped = chunk_split($b64, 64, "\n");
+        $label   = $usePrivate ? 'PRIVATE KEY' : 'PUBLIC KEY';
+        return "-----BEGIN {$label}-----\n{$wrapped}-----END {$label}-----\n";
     }
 
     /**
