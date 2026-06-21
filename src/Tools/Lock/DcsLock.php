@@ -25,6 +25,27 @@ class DcsLock
     private static ?bool $floatTimeout = null;
 
     /**
+     * 锁主键的物理名：用 hash tag {} 包住 $lockKey。
+     * 集群下 unlock 的 Lua（EVAL）一次性操作锁主键(KEYS[1])与 _WAIT 等待键(KEYS[2])，
+     * 两键必须落同一 slot，否则报 CROSSSLOT。realKey/waitKey 的 tag 内容同为 $lockKey → 同 slot。
+     * 注：phpredis OPT_PREFIX 自动前置在 {} 之外，不进入 tag，两键 tag 仍一致，故 OPT_PREFIX 下依然安全。
+     * 因 Lua 与单键命令(set/get/ttl/expire/blPop)必须操作同一物理键，所有物理键站点统一经此换算；
+     * 内存映射 self::$unlock 的数组键仍用逻辑 $lockKey（非 Redis key，不加 tag）。
+     */
+    private static function realKey(string $lockKey): string
+    {
+        return '{' . $lockKey . '}';
+    }
+
+    /**
+     * 等待队列键的物理名：与 realKey 共享同一 hash tag（$lockKey）以同 slot。
+     */
+    private static function waitKey(string $lockKey): string
+    {
+        return '{' . $lockKey . '}_WAIT';
+    }
+
+    /**
      * 加锁（使用分布式锁时$uuid建议使用雪花算法）
      * @param string $lockKey 锁key
      * @param string $uuid 请求加锁的唯一标识（并发时保证每个请求标识唯一）
@@ -119,10 +140,10 @@ if redis.call('get', KEYS[1]) == ARGV[1] then
 end
 return 0;
 EOF;
-        $ret = self::evalLua($redis, $script, [$lockKey, $uuid, $time], 1);
+        $ret = self::evalLua($redis, $script, [self::realKey($lockKey), $uuid, $time], 1);
         if ($ret === false) {
             //Lua 完全不可用降级:退回裸 expire(不校验 value，与 _unlock 降级同等限制)
-            $ret = $redis->expire($lockKey, $time);
+            $ret = $redis->expire(self::realKey($lockKey), $time);
         }
         return $ret;
     }
@@ -152,7 +173,7 @@ EOF;
     private static function closureLock(string $lockKey, string $uuid, int $time = 3, int $timeout = 0)
     {
         $redis = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
-        if ($redis->set($lockKey, $uuid, ['NX', 'EX' => $time])) {
+        if ($redis->set(self::realKey($lockKey), $uuid, ['NX', 'EX' => $time])) {
             self::$unlock[$lockKey . '::' . $uuid] = true;
             return true;
         }
@@ -160,7 +181,7 @@ EOF;
             return false;
         }
         $wait = $timeout;
-        if ($timeout > 0 && ($ttl = $redis->ttl($lockKey) * 1000) > 0 && $ttl < $timeout) {
+        if ($timeout > 0 && ($ttl = $redis->ttl(self::realKey($lockKey)) * 1000) > 0 && $ttl < $timeout) {
             $wait = $ttl;
         }
         $popTime = microtime(true);
@@ -174,7 +195,7 @@ EOF;
             //老版本只支持整秒，维持原有行为
             $blockSec = intval($wait > 1000 ? round($wait / 1000) : 1);
         }
-        $pop  = $redis->blPop($lockKey . '_WAIT', $blockSec);
+        $pop  = $redis->blPop(self::waitKey($lockKey), $blockSec);
         $wait = (int)round($blockSec * 1000);
         if ($pop) {
             $popTime = intval((microtime(true) - $popTime) * 1000);
@@ -227,7 +248,7 @@ end
 return 0;
 EOF;
         $redis  = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
-        $params = [$lockKey, $lockKey . '_WAIT', $uuid];
+        $params = [self::realKey($lockKey), self::waitKey($lockKey), $uuid];
         $ret    = self::evalLua($redis, $script, $params, 2);
         if ($ret === false) {
             $ret = self::_unlock($redis, ...$params);
