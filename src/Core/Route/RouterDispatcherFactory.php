@@ -25,11 +25,14 @@ class RouterDispatcherFactory extends DispatcherFactory
 {
     protected function formatRoutePath($path)
     {
-        $routePerfix = trim(config('app.route_prefix', ''), '/');
-        if ($routePerfix) {
-            $path = '/' . $routePerfix . $path;
+        $routePrefix = trim((string) config('app.route_prefix', ''), '/');
+        if ($routePrefix) {
+            $path = '/' . $routePrefix . $path;
         }
-        $path .= trim(config('app.route_suffix'), '');
+        //原 trim(config('app.route_suffix'), '') 有两问题:① 第二参空 mask 是 no-op(没起作用);
+        //② 未设 route_suffix(共享库消费方常见)时 config 返 null → trim(null,...) 触发 deprecation。
+        //改为 (string) + 默认 '':安全、行为等价(suffix 原样追加),无 deprecation。
+        $path .= (string) config('app.route_suffix', '');
         return $path;
     }
 
@@ -48,7 +51,9 @@ class RouterDispatcherFactory extends DispatcherFactory
             );
             $prefix = '/' . join('/', $handledNamespace);
         }
-        if ($prefix[0] !== '/') {
+        //用 str_starts_with 代替 $prefix[0]:空串安全(无"Uninitialized string offset"警告)、同时处理空/无前导斜杠;
+        //(实际上方 if(!$prefix) 块已保证 $prefix 至少为 '/'，此处仅为稳健。)
+        if (!str_starts_with($prefix, '/')) {
             $prefix = '/' . $prefix;
         }
 
