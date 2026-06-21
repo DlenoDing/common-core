@@ -2,7 +2,7 @@
 
 namespace Dleno\CommonCore\JsonRpc\InterfaceBase;
 
-use ReflectionClass;
+use Dleno\CommonCore\Tools\AttributeReflection;
 
 /**
  * 参数定义基类
@@ -17,8 +17,7 @@ abstract class BaseParams
     public function toArray(bool $toUnderline = true): array
     {
         $data         = [];
-        $reflectClass = (new ReflectionClass($this));
-        $properties   = $reflectClass->getProperties();
+        [$reflectClass, $properties] = AttributeReflection::of($this);
         foreach ($properties as $property) {
             //获得获取属性的get方法
             $method = 'get' . $this->underlineToCapital($property->getName());
@@ -46,8 +45,7 @@ abstract class BaseParams
         if (empty($data)) {
             return $this;
         }
-        $reflectionParams = new ReflectionClass($this);
-        $properties       = $reflectionParams->getProperties();
+        [$reflectionParams, $properties] = AttributeReflection::of($this);
         foreach ($properties as $property) {
             //分别获取属性的下划线/大驼峰名
             $underLineName = $this->capitalToUnderline($property->getName());

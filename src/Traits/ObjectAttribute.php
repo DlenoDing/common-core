@@ -2,7 +2,7 @@
 
 namespace Dleno\CommonCore\Traits;
 
-use ReflectionClass;
+use Dleno\CommonCore\Tools\AttributeReflection;
 
 /**
  * 对象属性操作（DTO/实体 与 数组/DB 的互转）。
@@ -51,8 +51,7 @@ trait ObjectAttribute
     public function toArray(bool $toUnderline = true): array
     {
         $data         = [];
-        $reflectClass = (new ReflectionClass($this));
-        $properties   = $reflectClass->getProperties();
+        [$reflectClass, $properties] = AttributeReflection::of($this);
         foreach ($properties as $property) {
             //获得获取属性的get方法
             $propertyName = $this->underlineToCapital($property->getName());
@@ -86,8 +85,7 @@ trait ObjectAttribute
     public function toData(): array
     {
         $data         = [];
-        $reflectClass = (new ReflectionClass($this));
-        $properties   = $reflectClass->getProperties();
+        [$reflectClass, $properties] = AttributeReflection::of($this);
         foreach ($properties as $property) {
             //获得获取属性的get方法
             $propertyName = $this->underlineToCapital($property->getName());
@@ -125,8 +123,7 @@ trait ObjectAttribute
         if (empty($data)) {
             return $this;
         }
-        $reflectClass = new ReflectionClass($this);
-        $properties   = $reflectClass->getProperties();
+        [$reflectClass, $properties] = AttributeReflection::of($this);
         foreach ($properties as $property) {
             //分别获取属性的下划线/大驼峰名
             $underLineName = $this->capitalToUnderline($property->getName());
