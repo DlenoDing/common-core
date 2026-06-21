@@ -72,7 +72,7 @@ class AmqpDbConfig
         self::$pool = [
             'connections'     => (int)env('AMQP_CONNECTION', 2),
             'min_connections' => (int)env('AMQP_MIN_CONNECTION', 1),
-            'max_connections' => (int)env('AMQP_MAX_CONNECTION', 10),//高并发下值越大，redis效率越高
+            'max_connections' => (int)env('AMQP_MAX_CONNECTION', 10),//连接池最大连接数
             'connect_timeout' => (float)env('AMQP_CONNECT_TIMEOUT', 10.0),
             'wait_timeout'    => (float)env('AMQP_WAIT_TIMEOUT', 3.0),
             'heartbeat'       => (int)env('AMQP_HEARTBEAT', 15),
