@@ -232,44 +232,35 @@ class EloquentBuilder extends Builder
     }
 
     /**
-     * @param $columns
-     * @param $text
-     * @param null $mode
+     * 全文检索 where。委托框架原生 `whereFullText`(Query\Builder)实现:
+     *   - $text 走**参数绑定**(`?` 占位),不再 addslashes 拼接 → 杜绝注入;
+     *   - $columns 经 grammar `columnize` 逐列 wrap 转义标识符;
+     *   - mode 只取**白名单**映射成原生 $options,非白名单值一律落自然语言模式(不再原样拼接)。
+     * 方法名带 Diy 后缀是为避免覆盖父类 Query\Builder 的原生 `whereFullText`。
+     *
+     * $text 语法(BOOLEAN 模式):无符号=或/自动分词; `+`必须出现; `-`必须不出现; `>`/`<`调权重;
+     *   `()`分组; `~`转负相关; `*`后缀通配; `"…"`完全匹配; `@distance`词距。
+     *
+     * @param string|string[] $columns 检索列
+     * @param string          $text    检索词(绑定为参数,安全)
+     * @param string|bool|null $mode    检索模式:true/'BOOLEAN'→布尔模式; 'LANGUAGE'/null/false→自然语言(默认);
+     *                                  'LANGUAGE_EX'/'EXPANSION'→自然语言+query expansion; 其它非白名单值→按自然语言处理
      * @return $this
      */
     public function whereFullTextDiy($columns, $text, $mode = null)
     {
-        if (is_array($columns)) {
-            $columns = join(',', $columns);
+        // 兼容旧布尔签名:true=布尔模式,false/null=自然语言
+        if (is_bool($mode)) {
+            $mode = $mode ? 'BOOLEAN' : null;
         }
-        $text    = addslashes($text);
-        $modeVal = '';
-        if ((is_bool($mode) && $mode) || $mode === 'BOOLEAN') {
-            /*
-            $text 语法：
-                  无符号 默认情况，代表或，自动分词搜索
-                  + 必须出现
-                  - 必须不出现
-                  > 提高该条匹配数据的权重值
-                  < 降低该条匹配数据的权重值
-                  () 相当于表达式分组，和我们数学中的表达式一个道理
-                  ~ 将其相关性由正转负，表示拥有该字会降低相关性
-                  * 通配符，只能在字符串后面使用
-                  " 完全匹配，被双引号包起来的单词必须整个被匹配
-                  @distance 用来测试两个或两个以上的单词是否都在一个指定的距离内
-            */
-            $modeVal = ' IN BOOLEAN MODE';
-        } elseif ($mode === 'LANGUAGE') {
-            $modeVal = ' IN NATURAL LANGUAGE MODE';
-        } elseif ($mode === 'LANGUAGE_EX') {
-            $modeVal = ' IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION';
-        } elseif ($mode === 'EXPANSION') {
-            $modeVal = ' WITH QUERY EXPANSION';
-        } elseif (!is_null($mode)) {
-            $modeVal = ' ' . $mode;
-        }
+        $options = match ($mode) {
+            'BOOLEAN'                  => ['mode' => 'boolean'],
+            'LANGUAGE_EX', 'EXPANSION' => ['expanded' => true], // MySQL: 自然语言 + WITH QUERY EXPANSION
+            default                    => [],                   // 'LANGUAGE'/null/未知 → 自然语言模式
+        };
 
-        $this->whereRaw("MATCH ($columns) AGAINST ('{$text}'{$modeVal})");
+        // 委托父类原生 whereFullText:自动参数绑定 + 列名 wrap + mode 白名单
+        $this->whereFullText($columns, (string) $text, $options);
         return $this;
     }
 
