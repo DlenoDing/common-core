@@ -110,8 +110,12 @@ class OutPut
                 $val = is_numeric($val) ? "{$val}" : $val;
                 $val = is_null($val) ? "" : $val;
                 $val = is_bool($val) ? ($val ? 1 : 0) : $val;
-                //统一时间转换为时间戳
-                if (strpos(strtolower($key), 'time') !== false) {
+                //时间字段统一转时间戳:字段名含 time、或以 _at 结尾(created_at/updated_at 等约定)。
+                //双保险:仅当值确为完整日期时间(Y-m-d H:i:s,见 CheckVal::isDateTime)才转,
+                //非日期时间值(如 lifetime=3600 / timezone=Asia/Shanghai)原样不动,杜绝误转。
+                //用 _at 后缀(非裸 at)精确命中约定,避免 format/lat/seat 等正好以 at 结尾的字段被误命中。
+                $lkey = strtolower($key);
+                if (strpos($lkey, 'time') !== false || str_ends_with($lkey, '_at')) {
                     if (CheckVal::isDateTime($val)) {
                         $val = strtotime($val).'';
                     } elseif ($val == GlobalConf::DEFAULT_DATE_TIME || empty($val)) {
