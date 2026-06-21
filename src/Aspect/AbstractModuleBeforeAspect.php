@@ -157,6 +157,15 @@ abstract class AbstractModuleBeforeAspect extends AbstractAspect
             throw new HttpException('Error Sign', RcodeConf::ERROR_SIGN);
         }
 
+        //fail-closed:开启了签名校验却没配 signKey(如 SIGN_KEY 未注入,signKey() 返空)→
+        //空密钥会让签名串少了密钥段、形同虚设/可被伪造;按服务端配置错误(500)直接拒绝,绝不用空密钥继续校验。
+        $signKey = $this->signKey();
+        if ($signKey === '') {
+            Logger::systemLog('SIGN')
+                  ->error('Message::签名校验已开启但 signKey 未配置(空),请检查 SIGN_KEY 注入');
+            throw new HttpException('Sign Config Error', RcodeConf::ERROR_SERVER);
+        }
+
         $postRawBody = get_inject_obj(RequestInterface::class)
             ->getBody()
             ->getContents();
@@ -169,7 +178,7 @@ abstract class AbstractModuleBeforeAspect extends AbstractAspect
                 get_header_val('Client-Version', '') .
                 get_header_val('Client-Timestamp', '') .
                 get_header_val('Client-Nonce', '') .
-                $this->signKey() .
+                $signKey .
                 $postRawBody .
                 get_header_val('Client-Token', '');
         $sign = md5($str);
