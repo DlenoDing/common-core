@@ -32,7 +32,9 @@ class InitMiddleware implements MiddlewareInterface
         //服务器固定时区运行
         date_default_timezone_set(config('app.default_time_zone', 'UTC'));
 
-        $response = Context::get(ResponseInterface::class);
+        //兜底:Context 里没有 ResponseInterface 时构造一个,避免下面 return $response / 后续使用拿到 null
+        //(PSR-15 中间件必须返回 ResponseInterface,返 null 会 TypeError)。
+        $response = Context::get(ResponseInterface::class) ?? new \Hyperf\HttpMessage\Server\Response();
         $servers  = $request->getServerParams();
         if (($servers['request_uri'] ?? '') == '/favicon.ico') {
             return $response;

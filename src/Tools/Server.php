@@ -31,12 +31,17 @@ class Server
 
     public static function runData()
     {
+        //非请求上下文(队列/定时等没跑 InitMiddleware 的地方)调用时,REQUEST_RUN_START/MEM 可能未设;
+        //给默认值(起点=当前时刻/当前内存 → 耗时/增量记为 0),避免 microtime - null = 巨值的脏数据。
+        $runStart = Context::get(RequestConf::REQUEST_RUN_START) ?? microtime(true);
+        $runMem   = Context::get(RequestConf::REQUEST_RUN_MEM) ?? memory_get_usage();
+
         $return = [];
         // 显示运行时间
-        $return['time'] = number_format((microtime(true) - Context::get(RequestConf::REQUEST_RUN_START)), 4) . 's';
+        $return['time'] = number_format((microtime(true) - $runStart), 4) . 's';
         // 显示运行内存
-        $return['memory']     = format_bytes(memory_get_usage() - Context::get(RequestConf::REQUEST_RUN_MEM));
-        $return['memory_max'] = format_bytes(memory_get_peak_usage() - Context::get(RequestConf::REQUEST_RUN_MEM));
+        $return['memory']     = format_bytes(memory_get_usage() - $runMem);
+        $return['memory_max'] = format_bytes(memory_get_peak_usage() - $runMem);
         return $return;
     }
 

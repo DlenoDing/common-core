@@ -45,7 +45,9 @@ class BaseProducer extends ProducerMessage
         if (is_string($properties) && !is_null($val)) {
             $this->properties[$properties] = $val;
         } elseif (is_array($properties)) {
-            $this->properties = $properties;
+            //合并而非整体覆盖:保留父类默认(content_type / delivery_mode=持久化)与已设的
+            //application_headers(延时消息 x-delay),避免数组形态调用把这些 wipe 掉导致丢属性/延时失效。
+            $this->properties = array_merge($this->properties, $properties);
         }
         return $this;
     }

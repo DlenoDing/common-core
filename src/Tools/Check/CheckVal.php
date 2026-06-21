@@ -122,7 +122,9 @@ class CheckVal
         if (!$str || !is_string($str)) {
             return false;
         }
-        return preg_match('#[a-z0-9&\-_.]+@[\w\-_]+([\w\-.]+)?\.[\w\-]+#is', $str) ? true : false;
+        //原正则未锚定 ^…$,只匹配"含 email 子串"(如 "x foo@bar.com y" 也判 true);
+        //改用 filter_var 标准校验"整串是合法 email"。
+        return filter_var($str, FILTER_VALIDATE_EMAIL) !== false;
     }
 
     /**
@@ -144,10 +146,14 @@ class CheckVal
         if (!$str || !is_string($str)) {
             return false;
         }
-        return preg_match(
-            '#^http(s)?://([a-zA-Z0-9\.]?([0-9A-Za-z][0-9A-Za-z-]+\.)+[A-Za-z]{2,5})|((25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9])\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9]|0)\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9]|0)\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[0-9]))#',
-            $str
-        ) ? true : false;
+        //原正则未锚定 ^…$、对 path/port/query 也覆盖不全,且只匹配子串;
+        //改用 filter_var 校验合法 URL,并限定 scheme 为 http/https(保留原"http(s) 网址"语义,
+        //filter_var 本身还会接受 ftp/mailto 等)。
+        if (filter_var($str, FILTER_VALIDATE_URL) === false) {
+            return false;
+        }
+        $scheme = strtolower((string) parse_url($str, PHP_URL_SCHEME));
+        return in_array($scheme, ['http', 'https'], true);
     }
 
     /**
