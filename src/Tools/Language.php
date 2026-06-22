@@ -6,6 +6,8 @@ namespace Dleno\CommonCore\Tools;
 
 use Hyperf\Contract\TranslatorInterface;
 
+use function Hyperf\Config\config;
+
 class Language
 {
     /**
@@ -57,11 +59,18 @@ class Language
     }
 
     /**
-     * 设置当前语言
+     * 设置当前语言。
+     * 安全:locale 会被翻译器用于拼语言文件路径,而本方法的入参常来自客户端(Client-Language / Accept-Language)。
+     * 故只允许安全字符 [A-Za-z0-9_-](涵盖 en / zh_CN / pt_BR 等),含 ../ 、/ 、. 等的值直接拒绝、回退默认 locale,
+     * 杜绝路径穿越/locale 注入。
      * @param $language
      */
     public static function setLang($language)
     {
+        $language = is_string($language) ? $language : '';
+        if ($language === '' || !preg_match('/^[A-Za-z0-9_-]+$/', $language)) {
+            $language = (string) config('translation.locale', config('translation.fallback_locale', 'en'));
+        }
         get_inject_obj(TranslatorInterface::class)->setLocale($language);
     }
 
