@@ -75,6 +75,9 @@ interface WsBindStrategyInterface
      *
      *  - **必须是 bindDimensions() 返回维度名的子集**(否则该维度未被绑定、presence 无从建);**不要求**是 addressableDimensions()
      *    (心跳 presence 独立于寻址用的反向索引)。
+     *    ⚠️ **配错陷阱**:若把某 dim 放进本方法、但 bindDimensions() 不返回它,则 setBind/refreshBind/unBind 都会静默跳过该 dim、
+     *    presence 永远建不起来,而 checkHeartbeatOnlineByDim('该dim',…) 又因维度合法而执行 → **静默返回全 false(表现成"用户都不在线")**。
+     *    框架无法静态校验(bindDimensions 按身份动态返回),故务必保证本方法所列维度确实会被 bindDimensions() 绑定。
      *  - **业务承诺:所列维度的单 value 连接数可控**(如 account_id 多端也就几条)。**切勿放低基数分组维度**
      *    (device_type/channel/language 这类一个 value 挂海量连接),那是寻址推送(addressableDimensions)该干的,拿来做在线检查会拖垮 Redis。
      *  - **框架会自动并入 uniqueDimensions()**:unique 维度每值单连接、天然适合检查,即使没列进本方法也允许检查(防漏设)。

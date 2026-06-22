@@ -41,8 +41,9 @@ class WsKeys
     //小 N=定向查询/全量枚举往返少(≤N 次),但 presence 写只落 N 个 key/slot;连接多/集群大需调大——取舍详见 config('websocket') 注释。
     const PRESENCE_BUCKET_NUM = 4;
 
-    //前缀进程级缓存（config 启动期固定，不会运行时变；每 worker 一份，协程安全）
-    private static ?string $prefix = null;
+    //前缀 / presence bucket 数的进程级缓存（config 启动期固定，不会运行时变；每 worker 一份，协程安全）
+    private static ?string $prefix      = null;
+    private static ?int    $bucketCount = null;
 
     /**
      * 统一 key 前缀（可配置，默认 'ws:'）。
@@ -93,11 +94,15 @@ class WsKeys
     /**
      * presence 的 bucket 总数(config('websocket.presence_bucket_num'),默认 4,≤0 回退默认)。
      * 写/读/全量枚举三处共用,保证 bucket 编号一致(中途改值会让旧桶的值漏读,需在无流量窗口改)。
+     * 进程级缓存(同 prefix():config 启动期固定;在多条热路径——setBind/refresh/unBind、读循环、全量枚举——被频繁调,免重复读 config)。
      */
     public static function presenceBucketCount(): int
     {
-        $num = (int) config('websocket.presence_bucket_num', self::PRESENCE_BUCKET_NUM);
-        return $num >= 1 ? $num : self::PRESENCE_BUCKET_NUM;
+        if (self::$bucketCount === null) {
+            $num = (int) config('websocket.presence_bucket_num', self::PRESENCE_BUCKET_NUM);
+            self::$bucketCount = $num >= 1 ? $num : self::PRESENCE_BUCKET_NUM;
+        }
+        return self::$bucketCount;
     }
 
     /**
