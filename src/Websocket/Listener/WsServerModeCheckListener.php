@@ -14,7 +14,8 @@ use Swoole\Coroutine;
 
 /**
  * 启动前置校验（启用 WebSocket 服务时）：① 运行模式必须 SWOOLE_BASE；② Redis 必须支持 HEXPIRE(Redis 7.4+)。
- * 任一不满足 → 打印提示并终止整个启动(fail-fast,避免运行期才出错)。
+ * 运行模式不满足、或 Redis 可达但不支持 HEXPIRE → 打印提示并终止整个启动(fail-fast,避免运行期才出错);
+ * Redis 暂时不可达 → 仅 WARN 放行,避免启动期误杀临时网络/依赖编排抖动。
  *
  * ① server.mode = SWOOLE_BASE（根因在框架层）：
  *  Hyperf WebSocket 的 per-fd 状态 —— FdCollector::$fds(决定 onMessage 是否丢弃) 与
@@ -49,7 +50,7 @@ class WsServerModeCheckListener implements ListenerInterface
         if (! WsProcessSwitch::hasWebSocketServer()) {
             return;
         }
-        $this->checkServerMode();    // 任一不满足内部直接 exit(1)
+        $this->checkServerMode();    // 模式不满足会直接 exit(1)
         $this->checkRedisHExpire();
     }
 

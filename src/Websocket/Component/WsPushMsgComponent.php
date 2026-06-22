@@ -24,7 +24,7 @@ use function Hyperf\Support\env;
  *
  * - send/close：本机 Sender 直推/断连（压缩开关读 env，无法走配置中心）
  * - pushPubMessage：广播；pushToDimMessage：按业务维度(WsBindStrategy)反向索引定向，分发 PushMessageJob 到各 server 的 per-IP 队列
- * - checkRealtimeOnlineByDim：实时 socket 级核验（仅 uniqueDimensions 单连接维度、批量有上限、禁全量）——派 CheckOnlineJob 到目标 server 队列 + 轮询 check key 聚合
+ * - checkRealtimeOnlineByDim：实时 socket 级核验（仅 uniqueDimensions 单连接维度、批量有上限、禁全量）——派 CheckOnlineJob 到目标 server 队列 + BLPOP ready payload 聚合
  * - checkHeartbeatOnlineByDim：心跳级在线判断（读 presence 索引 ws:online:<dim>:<bucket>，按 bucket 批量 HMGET，廉价、适合大批量；精度为心跳/TTL 粒度；presence 由绑定写路径维护）
  * - closeClient：派 CloseMessageJob
  *
@@ -216,7 +216,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      *
      * 【取值约定 / 如何"查全量"】$values 必须是**调用方显式列出的、要查询的维度值清单**。
      * 本方法没有"全量"哨兵,也不自动发现"该维度下所有已绑定的值"——把你关心的全部值一次传进来即可(完整清单也行)。
-     * 真要枚举某维度当前所有在线值,需 SCAN `<prefix>online:<dim>:*` 键空间(集群跨节点、开销大),本方法不内置。
+     * 真要枚举某维度当前所有在线值,请用 checkHeartbeatOnlineAllByDim()(遍历已知 bucket key,非 keyspace SCAN)。
      * @param string $dim    维度名(须在 WsBindStrategy::onlineCheckDimensions() ∪ uniqueDimensions() 内,否则抛异常;presence 只为这些维度维护)
      * @param array  $values 要查询的维度值清单(显式列出,无"全量"哨兵;大批量/完整清单均可)
      * @return array value => bool
@@ -285,7 +285,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      *
      * 成本:N 次 HGETALL(默认 4,config 可调;并发重叠)——无论在线值多少都遍历全部 bucket,故适合"偶尔取全量在线快照"
      * (如后台/统计),不适合高频热路径。返回体 O(M)(M=该维度在线值数)。
-     * 精度同心跳级:刚断连的值最多 ≤BIND_CACHE_TIME 内仍可能在列(presence TTL 滞留)。
+     * 精度同心跳级:干净断连会精确删本 fd、最后一个 fd 立即离线;崩溃残留/写失败等异常场景由 field TTL 兜底。
      * 限制:仅对 onlineCheckDimensions()∪uniqueDimensions() 维度有 presence;presence_bucket_num 中途改值会漏读旧桶,改值需在无流量窗口。
      * @return array value => true(仅在线值;不在线/无 presence 的不返回)
      */
@@ -343,7 +343,7 @@ class WsPushMsgComponent extends BaseCoreComponent
         $set = array_flip(array_merge($s->onlineCheckDimensions(), $s->uniqueDimensions()));
         if (!isset($set[$dim])) {
             throw new \InvalidArgumentException(
-                "checkHeartbeatOnlineByDim 仅支持 onlineCheckDimensions(∪uniqueDimensions) 维度,[{$dim}] 不在其中;"
+                "心跳在线检查仅支持 onlineCheckDimensions(∪uniqueDimensions) 维度,[{$dim}] 不在其中;"
                 . "低基数分组维度仅用于 pushToDimMessage,不支持在线检查"
             );
         }
@@ -439,12 +439,13 @@ class WsPushMsgComponent extends BaseCoreComponent
             }
         }
 
-        $servers = get_inject_obj(WsServerComponent::class)->getServerList();
+        $servers   = get_inject_obj(WsServerComponent::class)->getServerList();
+        $serverSet = array_fill_keys($servers, true);
 
         $ret = [];
         foreach ($binds as $field => $serverFdJson) {
             $serverFd = json_to_array($serverFdJson);
-            if (!in_array($serverFd['sv'], $servers)) {
+            if (!isset($serverSet[$serverFd['sv']])) {
                 //记录关系已过期无效,删除该连接项(field=sv:fd)
                 get_inject_obj(WsTokenComponent::class)->delDimBind($dim, $value, $field);
                 continue;

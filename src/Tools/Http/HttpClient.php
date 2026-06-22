@@ -133,11 +133,9 @@ class HttpClient
                 $client->setData($data);
                 $ok = $client->execute($path);
             } else {
-                if ($data) {
-                    if (is_array($data) || is_object($data)) {
-                        $data = http_build_query((array)$data);
-                    }
-                    $path .= (isset($parsed['query']) ? '&' : '?') . $data;
+                $query = self::buildQuery($data);
+                if ($query !== '') {
+                    $path .= (isset($parsed['query']) ? '&' : '?') . $query;
                 }
                 $ok = $client->get($path);
             }
@@ -250,11 +248,12 @@ class HttpClient
                 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PATCH");
                 curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
             } else {
-                if ($data) {
+                $query = self::buildQuery($data);
+                if ($query !== '') {
                     if (isset($parsedUrl['query'])) {
-                        $url .= '&' . $data;
+                        $url .= '&' . $query;
                     } else {
-                        $url .= '?' . $data;
+                        $url .= '?' . $query;
                     }
                 }
             }
@@ -310,5 +309,16 @@ class HttpClient
             //无论成功/失败/异常，保证释放 curl 句柄
             curl_close($ch);
         }
+    }
+
+    private static function buildQuery($data): string
+    {
+        if (is_array($data) || is_object($data)) {
+            return http_build_query((array)$data);
+        }
+        if ($data === null || $data === false || $data === '') {
+            return '';
+        }
+        return (string)$data;
     }
 }

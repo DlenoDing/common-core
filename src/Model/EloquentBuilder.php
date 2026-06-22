@@ -46,18 +46,24 @@ class EloquentBuilder extends Builder
             'insert',
             'insertGetId',
         ];
+        $isInsertMethod = in_array($method, $insertMethods, true);
+        $aliasState     = true;
         //插入操作不使用别名
-        if (in_array($method, $insertMethods)) {
+        if ($isInsertMethod) {
             $model          = $this->getModel();
+            $aliasState     = $model->isAlias;
             $model->isAlias = false;
             $this->setModel($model);
         }
-        $object = parent::__call($method, $parameters);
-        //执行完成后恢复别名
-        if (in_array($method, $insertMethods)) {
-            $model          = $this->getModel();
-            $model->isAlias = true;
-            $this->setModel($model);
+        try {
+            $object = parent::__call($method, $parameters);
+        } finally {
+            //执行完成后恢复别名;异常时也不能把临时状态泄漏到同一个 builder 实例。
+            if ($isInsertMethod) {
+                $model          = $this->getModel();
+                $model->isAlias = $aliasState;
+                $this->setModel($model);
+            }
         }
         if (!$object instanceof Builder) {
             return $object;

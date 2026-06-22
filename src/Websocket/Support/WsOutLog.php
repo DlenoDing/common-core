@@ -68,11 +68,15 @@ class WsOutLog
 
                 $server = config('app_name') . '(' . Server::getIpAddr() . ')';
                 //用 has() 判定是否走过消息路由(decode 设过 reqId):合法 reqId 可为 '0'/0,不能用真值判断。
+                $service = null;
                 if (Context::has(RequestConf::REQUEST_REQ_ID)) {
-                    $mca     = Server::getRouteMca();
-                    $service = join('\\', $mca['module']) . '\\' . $mca['ctrl'] . '->' . $mca['action'];
-                } else {
-                    $service = $request->path();
+                    $mca = Server::getRouteMca();
+                    if (isset($mca['module'], $mca['ctrl'], $mca['action']) && is_array($mca['module']) && !empty($mca['module'])) {
+                        $service = join('\\', $mca['module']) . '\\' . $mca['ctrl'] . '->' . $mca['action'];
+                    }
+                }
+                if ($service === null) {
+                    $service = method_exists($request, 'path') ? $request->path() : $request->getUri()->getPath();
                 }
 
                 $channel  = $channel ?? Logger::API_CHANNEL_RESPONSE;
