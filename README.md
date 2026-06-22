@@ -55,6 +55,33 @@ return [
 
 `CoreMiddleware` 和 `DispatcherFactory` 已由 common-core 的 `ConfigProvider` 注入，通常不需要业务项目重复绑定。
 
+### 异常处理器配置
+
+异常处理链顺序敏感，`DefaultExceptionHandler` 会兜底并终止后续传播。因此 common-core 不通过 `ConfigProvider` 自动注入 `exceptions.handler`，而是提供 `ExceptionHandlerConfig` 让业务项目在 `config/autoload/exceptions.php` 中显式生成默认链，并保留业务 handler 的插入位置：
+
+```php
+use Dleno\CommonCore\Exception\ExceptionHandlerConfig;
+
+return [
+    'handler' => ExceptionHandlerConfig::defaultHandlers(
+        httpCommonHandlers: [
+            App\Exception\Handler\BusinessCommonExceptionHandler::class,
+        ],
+        wsCommonHandlers: [
+            App\WebSocket\Exception\Handler\BusinessCommonWsExceptionHandler::class,
+        ],
+        httpBeforeDefault: [
+            App\Exception\Handler\BusinessOutputExceptionHandler::class,
+        ],
+        wsBeforeDefault: [
+            App\WebSocket\Exception\Handler\BusinessWsOutputExceptionHandler::class,
+        ],
+    ),
+];
+```
+
+`httpCommonHandlers` / `wsCommonHandlers` 会插入到 common-core 的 `CommonExceptionHandler` 之后，用于回滚、审计、上下文清理等公共前置处理，不应调用 `stopPropagation()`；`httpBeforeDefault` / `wsBeforeDefault` 会插入到对应协议的 `DefaultExceptionHandler` 之前，用于业务输出类 handler。未启用 `ENABLE_HTTP` / `ENABLE_WS` 时不会生成对应 server 的异常链。
+
 ### WebSocket 业务策略绑定
 
 WebSocket 的连接维度和身份解析属于业务决策，common-core 不提供默认绑定策略。业务项目需要在 `dependencies.php` 中绑定：
@@ -117,6 +144,7 @@ return [
 主要能力：
 
 - HTTP/RPC 常用异常处理器。
+- `ExceptionHandlerConfig` 生成 HTTP / WS 默认异常链，并支持业务公共前置 handler、兜底前输出 handler 插入到固定位置。
 - 统一 JSON 输出。
 - API/RPC/Error 输出日志封装。
 - HTTP/WS Controller 响应日志切面。
