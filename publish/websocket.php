@@ -25,10 +25,14 @@ return [
     // 避免每次都 HGETALL server:list。≤0 关闭缓存=每次取最新;默认 1000ms(注册有效期 30s 级,1s 量级缓存不影响正确性)。
     'server_set_cache_ms' => (int) env('WS_SERVER_SET_CACHE_MS', 1000),
 
-    // 心跳 presence 索引(checkHeartbeatOnlineByDim 读的 ws:online:<dim>:<bucket>)的 bucket 数。
-    // 分桶把"按值散落"的在线判断收敛成"按 bucket 批量 HMGET",并避免单 key/单 slot 热点。默认 256;
-    // 账号量很大可调大(单桶更小、单次大批量查询的 HMGET 次数上限随之上升),≤0 回退默认。
-    'presence_bucket_num' => (int) env('WS_PRESENCE_BUCKET_NUM', 256),
+    // 心跳 presence 索引(checkHeartbeatOnlineByDim 读的 ws:online:<dim>:<bucket>)的 bucket 数。bucket = crc32(value) % N。
+    // 取舍(默认 4 偏向"低规模、读往返少",大规模需自调):
+    //   - 小 N(默认 4):定向查询 ≤N 次 HMGET(与查询批量大小无关,往返少)、全量枚举只 N 次 HGETALL;
+    //     但 presence 写只落 N 个 key/slot(集群最多铺到 N 个节点),且在线量大时单桶变大、全量单次 HGETALL 更重(可能阻塞出延迟尖刺)。
+    //   - 何时调大:① 在线值多 → 让单桶规模有界(约 在线数/N 控制在数千内);② 集群节点多 → N≥节点数(最好数倍)才铺得开;
+    //     但别远超"典型查询批量",否则定向查询命中的不同桶变多、HMGET 往返反而涨。
+    //   - ≤0 回退默认。注:N 中途改值会让旧桶的值漏读,需在无流量窗口改。
+    'presence_bucket_num' => (int) env('WS_PRESENCE_BUCKET_NUM', 4),
 
     // 实时 socket 级在线核验(checkRealtimeOnlineByDim)调优。
     'realtime_online' => [

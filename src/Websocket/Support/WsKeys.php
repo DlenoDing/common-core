@@ -37,8 +37,9 @@ class WsKeys
     const SERVER_REG_LIMIT = 30;                     // 服务器注册频率/有效期基数
     const BIND_CACHE_TIME  = 60;                     // 客户端绑定缓存时间
 
-    //心跳 presence 索引的默认 bucket 数(可配 config('websocket.presence_bucket_num'));bucket 化防单 key/单 slot 热点
-    const PRESENCE_BUCKET_NUM = 256;
+    //心跳 presence 索引的默认 bucket 数(可配 config('websocket.presence_bucket_num'))。
+    //小 N=定向查询/全量枚举往返少(≤N 次),但 presence 写只落 N 个 key/slot;连接多/集群大需调大——取舍详见 config('websocket') 注释。
+    const PRESENCE_BUCKET_NUM = 4;
 
     //前缀进程级缓存（config 启动期固定，不会运行时变；每 worker 一份，协程安全）
     private static ?string $prefix = null;
