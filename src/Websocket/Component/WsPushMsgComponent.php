@@ -9,6 +9,7 @@ use Dleno\CommonCore\Websocket\Support\WsKeys;
 use Dleno\CommonCore\Websocket\Job\CheckOnlineJob;
 use Dleno\CommonCore\Websocket\Job\CloseMessageJob;
 use Dleno\CommonCore\Websocket\Job\PushMessageJob;
+use Dleno\CommonCore\Websocket\Contract\WsBindStrategyInterface;
 use Dleno\CommonCore\Tools\AsyncQueue\AsyncQueue;
 use Hyperf\Coroutine\Parallel;
 use Hyperf\Di\Annotation\Inject;
@@ -23,7 +24,8 @@ use function Hyperf\Support\env;
  *
  * - send/close：本机 Sender 直推/断连（压缩开关读 env，无法走配置中心）
  * - pushPubMessage：广播；pushToDimMessage：按业务维度(WsBindStrategy)反向索引定向，分发 PushMessageJob 到各 server 的 per-IP 队列
- * - checkOnlineByDim：派 CheckOnlineJob 到目标 server 队列 + 轮询 check key 聚合在线判定
+ * - checkRealtimeOnlineByDim：实时 socket 级核验（仅 uniqueDimensions 单连接维度、批量有上限、禁全量）——派 CheckOnlineJob 到目标 server 队列 + 轮询 check key 聚合
+ * - checkHeartbeatOnlineByDim：心跳级在线判断（仅凭绑定反向索引 getDimBind 的新鲜度，廉价、可大批量；精度为心跳/TTL 粒度，与 pushToDimMessage 同一套绑定真相）
  * - closeClient：派 CloseMessageJob
  *
  * 维度名(account_id / device …)一律由调用方(业务)传入，本组件不绑定任何具体维度。
@@ -69,14 +71,34 @@ class WsPushMsgComponent extends BaseCoreComponent
         $this->sender->disconnect(intval($fd));
     }
 
+    //实时核验批量上限:每值都要派 job + 轮询 check key + 可能等满 2s,代价高;限批量、禁全量/超大批量,防压垮单消费进程。可经 env 调。
+    private const REALTIME_ONLINE_MAX = 100;
+
     /**
-     * 按绑定维度批量在线检查（维度由业务 WsBindStrategy 定义，须在 addressableDimensions() 内）。
-     * @param string $dim    维度名（如 account_id / device）
-     * @param array  $values 维度值列表
-     * @return array value => bool（任一连接在线即 true）
+     * 【实时 socket 级】在线核验:派 CheckOnlineJob 到目标 server 逐 fd 实时核验(getClientInfo)+ 轮询 check key 聚合。
+     * 精确到当下,但代价高(异步 job + 轮询 + 可能 2s 超时尾),故仅限:
+     *   - **维度必须是 uniqueDimensions(单连接维度)**——非 unique 维度每值可能多连接、fan-out 不可控,改用 checkHeartbeatOnlineByDim;
+     *   - **批量有上限**(REALTIME_ONLINE_MAX,env WS_REALTIME_ONLINE_MAX),超限抛异常;禁全量。
+     * @param string $dim    维度名(须在 WsBindStrategy::uniqueDimensions() 内)
+     * @param array  $values 维度值列表(数量 ≤ 上限)
+     * @return array value => bool(任一连接实时在线即 true)
      */
-    public function checkOnlineByDim(string $dim, array $values, int $concurrent = 100)
+    public function checkRealtimeOnlineByDim(string $dim, array $values, int $concurrent = 100)
     {
+        //仅允许 unique(单连接)维度:非 unique 维度 fan-out 大、实时核验代价不可控
+        $unique = get_inject_obj(WsBindStrategyInterface::class)->uniqueDimensions();
+        if (!in_array($dim, $unique, true)) {
+            throw new \InvalidArgumentException(
+                "checkRealtimeOnlineByDim 仅支持 uniqueDimensions 维度,[{$dim}] 非 unique;多连接维度的在线判断请用 checkHeartbeatOnlineByDim"
+            );
+        }
+        //批量上限(禁全量/超大批量)
+        $max = (int) env('WS_REALTIME_ONLINE_MAX', self::REALTIME_ONLINE_MAX);
+        if (count($values) > $max) {
+            throw new \InvalidArgumentException(
+                "checkRealtimeOnlineByDim 批量上限 {$max},传入 " . count($values) . ";大批量/全量在线请用 checkHeartbeatOnlineByDim"
+            );
+        }
         //去重:Parallel 以维度值为结果键,重复值会相互覆盖、漏掉条目
         $values   = array_values(array_unique($values));
         $wssCpt   = get_inject_obj(WsServerComponent::class);
@@ -152,6 +174,46 @@ class WsPushMsgComponent extends BaseCoreComponent
 
         $onlines = $parallel->wait(false);
         return $onlines;
+    }
+
+    /**
+     * 【心跳级】在线判断:仅凭绑定反向索引 getDimBind 的新鲜度——某维度值名下存在「绑定项 + 其 server 仍在线」即视为在线。
+     * 精度为心跳/TTL 粒度(Redis7.4+ HEXPIRE 自动剔除过期 field;心跳每 <idle_time 续期,刚断未过期的连接最多
+     * ≤BIND_CACHE_TIME 秒内仍判在线),但极廉价:每值仅 1 次 HGETALL,无 job/轮询/2s 尾,适合**大批量/全量** presence。
+     * 与 pushToDimMessage 同一套绑定真相:此处判"在线" ≈ "现在推一条消息会有去处"。
+     * 对任意维度(unique 或多连接)均可用;顺带清理 server 已下线的陈旧绑定项。
+     * @param string $dim    维度名
+     * @param array  $values 维度值列表(可大批量;内部按 $concurrent 并发,各值一次 HGETALL 重叠 RTT)
+     * @return array value => bool
+     */
+    public function checkHeartbeatOnlineByDim(string $dim, array $values, int $concurrent = 100)
+    {
+        $values   = array_values(array_unique($values));
+        $wssCpt   = get_inject_obj(WsServerComponent::class);
+        $wstkCpt  = get_inject_obj(WsTokenComponent::class);
+        $servers  = $wssCpt->getServerList();
+        $parallel = new Parallel($concurrent);
+        foreach ($values as $value) {
+            $parallel->add(
+                function () use ($wstkCpt, $servers, $dim, $value) {
+                    $binds = $wstkCpt->getDimBind($dim, $value);
+                    if (empty($binds)) {
+                        return false;
+                    }
+                    foreach ($binds as $field => $serverFdJson) {
+                        $serverFd = json_to_array($serverFdJson);
+                        if (in_array($serverFd['sv'], $servers)) {
+                            return true;//任一新鲜绑定落在在线 server 上 → 判在线(短路)
+                        }
+                        //该绑定项所属 server 已下线 → 清理陈旧项(field=sv:fd)
+                        $wstkCpt->delDimBind($dim, $value, $field);
+                    }
+                    return false;
+                },
+                $value
+            );
+        }
+        return $parallel->wait(false);
     }
 
     public static function getCheckKey($serverKey, $fd)
