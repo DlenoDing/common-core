@@ -206,9 +206,9 @@ class WsPushMsgComponent extends BaseCoreComponent
     }
 
     /**
-     * 【心跳级】在线判断:读 presence 索引(ws:online:<dim>:<bucket>,field=value→json([sv,...]))——
-     * 某维度值名下存在「在线 server」即视为在线。presence 由绑定写路径(setBind/refreshBind)从反向索引派生维护、
-     * 带 field 级 HEXPIRE(BIND_CACHE_TIME)自洁;此处只读、纯批量。
+     * 【心跳级】在线判断:读 presence 索引(ws:online:<dim>:<bucket>,field=value→json({sv:{fd:1}}))——
+     * 某维度值名下存在「在线 server」即视为在线。presence 由绑定写路径(setBind/refreshBind/unBind)用单 key Lua 直接维护
+     * (不回读反向索引重算),带 field 级 HEXPIRE(BIND_CACHE_TIME)自洁;此处只读、纯批量。
      * 精度为心跳/TTL 粒度:刚断的连接最多 ≤BIND_CACHE_TIME 秒内仍可能判在线(干净断连也走 TTL,见 WsTokenComponent presence 语义)。
      *
      * 性能:values 按 bucket 分组,每个 bucket 一次 HMGET(单 key,集群安全),N 个值 → 至多 min(bucket数, N) 次 HMGET,
@@ -286,7 +286,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      * 成本:N 次 HGETALL(默认 4,config 可调;并发重叠)——无论在线值多少都遍历全部 bucket,故适合"偶尔取全量在线快照"
      * (如后台/统计),不适合高频热路径。返回体 O(M)(M=该维度在线值数)。
      * 精度同心跳级:刚断连的值最多 ≤BIND_CACHE_TIME 内仍可能在列(presence TTL 滞留)。
-     * 限制:仅对 addressableDimensions() 维度有 presence;presence_bucket_num 中途改值会漏读旧桶,改值需在无流量窗口。
+     * 限制:仅对 onlineCheckDimensions()∪uniqueDimensions() 维度有 presence;presence_bucket_num 中途改值会漏读旧桶,改值需在无流量窗口。
      * @return array value => true(仅在线值;不在线/无 presence 的不返回)
      */
     public function checkHeartbeatOnlineAllByDim(string $dim, int $concurrent = 100): array
@@ -302,7 +302,7 @@ class WsPushMsgComponent extends BaseCoreComponent
             $bucketKey = WsKeys::presenceBucketKey($dim, $i);
             $parallel->add(
                 function () use ($redis, $bucketKey, $serverSet) {
-                    $all = $redis->hGetAll($bucketKey);//[ value => json([sv,...]) ]
+                    $all = $redis->hGetAll($bucketKey);//[ value => json({sv:{fd:1}}) ]
                     $out = [];//value => true(仅在线)
                     if (is_array($all)) {
                         foreach ($all as $value => $json) {

@@ -31,7 +31,7 @@ class WsKeys
     const SUFFIX_QUEUE       = 'queue:message:';     // per-server 实时消息队列
     const SUFFIX_QUEUE_CTL   = 'queue:ctl:';         // per-server 独立控制队列(check/close;dedicated_queue 开关打开时启用)
     const SUFFIX_CHECK_READY = 'check:ready:';       // 在线检查就绪信号(LIST: <rid> → 各服务器核验完 rPush 其 {sv,pairs})
-    const SUFFIX_ONLINE      = 'online:';            // 心跳 presence 索引前缀(bucket 化 HASH: ...online:<dim>:<bucket>,field=value→json([sv,...]))
+    const SUFFIX_ONLINE      = 'online:';            // 心跳 presence 索引前缀(bucket 化 HASH: ...online:<dim>:<bucket>,field=value→json({sv:{fd:1}}))
 
     //时长（秒）：服务器注册有效期基数 / 绑定缓存时长
     const SERVER_REG_LIMIT = 30;                     // 服务器注册频率/有效期基数
@@ -79,7 +79,7 @@ class WsKeys
     }
 
     /**
-     * 心跳 presence 索引的 bucket key:<prefix>online:<dim>:<bucket>(HASH,field=value→json([sv,...]))。
+     * 心跳 presence 索引的 bucket key:<prefix>online:<dim>:<bucket>(HASH,field=value→json({sv:{fd:1}}))。
      * bucket = crc32(value) % presence_bucket_num,把"按值散落"的在线判断收敛成"按 bucket 批量 HMGET",
      * 同时分桶避免单 key/单 slot 热点。读写两侧用同一函数算 bucket,保证一致。
      */

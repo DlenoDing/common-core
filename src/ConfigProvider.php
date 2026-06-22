@@ -64,7 +64,7 @@ class ConfigProvider
             'publish'      => [
                 [
                     'id'          => 'websocket',
-                    'description' => 'WS 业务可控配置(前缀 / 队列 / 独立控制队列 / 清扫 等调优旋钮)。',
+                    'description' => 'WS 业务可控配置(前缀 / 队列 / 独立控制队列 / presence / 在线检查 等调优旋钮)。',
                     'source'      => __DIR__ . '/../publish/websocket.php',
                     'destination' => BASE_PATH . '/config/autoload/websocket.php',
                 ],

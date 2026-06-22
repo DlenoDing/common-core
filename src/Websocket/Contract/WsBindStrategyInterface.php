@@ -17,7 +17,8 @@ namespace Dleno\CommonCore\Websocket\Contract;
  *
  * 调用时机（均在 WsTokenComponent 内）：
  *  - setBind：用 bindDimensions() 取维度写正向主绑定，并对 addressableDimensions() 的每个维度建反向索引；
- *  - pushToDimMessage / check{Realtime,Heartbeat}OnlineByDim：按 (维度名,值) 取反向索引寻址；
+ *  - pushToDimMessage / checkRealtimeOnlineByDim：按 (维度名,值) 取反向索引寻址；
+ *    checkHeartbeatOnlineByDim：读 presence 索引(由 onlineCheckDimensions() 决定哪些维度有 presence)；
  *  - unBind / refreshBind：依正向主绑定里的维度，反删 / 续期各反向索引。
  */
 interface WsBindStrategyInterface
