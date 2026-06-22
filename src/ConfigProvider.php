@@ -60,6 +60,15 @@ class ConfigProvider
                 //（绑定策略默认实现已下放业务端：App\WebSocket\Bind\DefaultWsBindStrategy）。
                 WsHookInterface::class => AbstractWsHook::class,
             ],
+            //安装时自动发布的配置模板(vendor:publish);destination 已存在则不覆盖,业务可自由修改。
+            'publish'      => [
+                [
+                    'id'          => 'websocket',
+                    'description' => 'WS 业务可控配置(前缀 / 队列 / 独立控制队列 / 清扫 等调优旋钮)。',
+                    'source'      => __DIR__ . '/../publish/websocket.php',
+                    'destination' => BASE_PATH . '/config/autoload/websocket.php',
+                ],
+            ],
             'annotations'  => [
                 'scan' => [
                     'paths'              => [
