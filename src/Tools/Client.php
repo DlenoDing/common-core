@@ -55,7 +55,12 @@ class Client
         if (empty($ip) || strcasecmp($ip, 'unknown') == 0) {
             return false;
         }
-        return preg_match("/^(10|172\\.16|192\\.168)\\./i", $ip) ? false : true;
+        //「公网客户端 IP」才返回 true,用于从 X-Forwarded-For 链里跳过内网代理地址。
+        //改用 filter_var 同时:① 校验是合法 IP;② 排除私网(10/8、172.16/12、192.168/16、IPv6 fc00::/7);
+        //③ 排除保留(0/8、127/8 回环、169.254/16 链路本地、240/4、IPv6 ::1 等)。
+        //原正则只字面匹配 `172.16.`,漏掉 172.17–172.31(/12 其余段,含 Docker 默认 172.17.x 等),
+        //且不校验格式(非法 IP 串会被误判为公网)。CGNAT 100.64/10 不在排除内,与 checkIpByAli 分工不变。
+        return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
     }
 
     /**
