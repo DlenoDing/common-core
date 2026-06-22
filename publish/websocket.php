@@ -21,6 +21,18 @@ return [
     // 仅影响 local 环境；非 local 环境只看 ENABLE_WS 总开关。
     'local_enable' => (bool) env('WS_LOCAL_ENABLE', false),
 
+    // 在线服务器集合的进程级短缓存(毫秒):在线判断热路径(checkRealtime/HeartbeatOnlineByDim)用它,
+    // 避免每次都 HGETALL server:list。≤0 关闭缓存=每次取最新;默认 1000ms(注册有效期 30s 级,1s 量级缓存不影响正确性)。
+    'server_set_cache_ms' => (int) env('WS_SERVER_SET_CACHE_MS', 1000),
+
+    // 实时 socket 级在线核验(checkRealtimeOnlineByDim)调优。
+    'realtime_online' => [
+        // 单次批量上限(禁全量/超大批量);超限抛异常,大批量在线请改用 checkHeartbeatOnlineByDim。下限 1。
+        'max'     => (int) env('WS_REALTIME_ONLINE_MAX', 100),
+        // 等结果超时(秒):消费方写完即 rPush 就绪信号、请求方 BLPOP 即时唤醒,此超时仅在消费方未响应(队列积压/没跑)时兜底。下限 1。
+        'timeout' => (int) env('WS_REALTIME_ONLINE_TIMEOUT', 2),
+    ],
+
     // ── 实时消息队列(DcsMessageConsumer)调优 ──
     // 消费 ws:queue:message:<sv>,承载真实下发(PushMessageJob)。改这里即可,无需继承消费进程类。
     // 未列项继承 async_queue.default(driver/pool/retry_seconds/handle_timeout/timeout)。

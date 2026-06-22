@@ -12,7 +12,7 @@ use Hyperf\Coroutine\Coroutine;
 use Hyperf\Di\Annotation\Inject;
 use Hyperf\Redis\Redis;
 
-use function Hyperf\Support\env;
+use function Hyperf\Config\config;
 
 /**
  * WS 服务器/客户端注册表（纯基建）。
@@ -75,14 +75,14 @@ class WsServerComponent extends BaseCoreComponent
     /**
      * 在线服务器集合(sv => true)·进程级短缓存版,供在线判断热路径用 isset 做 O(1) 查找。
      * TTL 内直接复用,避免在线判断每次都 getServerList()(HGETALL server:list + 剔除下线);
-     * TTL 默认 1000ms(env WS_SERVER_SET_CACHE_MS;≤0 关闭缓存=每次取最新)。
+     * TTL 默认 1000ms(config('websocket.server_set_cache_ms');≤0 关闭缓存=每次取最新)。
      * 注:命中缓存期会跳过 getServerList 的"剔除下线 server + 触发 clearRelServerData"自愈副作用——
      * 该自愈仍由缓存到期刷新、以及其它直接调用 getServerList 的路径(下发/断连/注册循环)承担;
      * 服务器注册有效期 30s 级,1s 量级缓存不影响在线判断正确性。每 worker 一份,协程下竞态仅致偶发重复取,无害。
      */
     public function getServerSetCached(): array
     {
-        $ttl = (int) env('WS_SERVER_SET_CACHE_MS', 1000);
+        $ttl = (int) config('websocket.server_set_cache_ms', 1000);
         $now = microtime(true);
         if ($ttl > 0 && self::$serverSetAt > 0.0 && ($now - self::$serverSetAt) * 1000 < $ttl) {
             return self::$serverSet;

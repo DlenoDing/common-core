@@ -16,6 +16,7 @@ use Hyperf\Di\Annotation\Inject;
 use Hyperf\Redis\Redis;
 use Hyperf\WebSocketServer\Sender;
 
+use function Hyperf\Config\config;
 use function Hyperf\Support\env;
 
 /**
@@ -70,10 +71,10 @@ class WsPushMsgComponent extends BaseCoreComponent
         $this->sender->disconnect(intval($fd));
     }
 
-    //实时核验批量上限:每值都要派 job + 等结果,代价高;限批量、禁全量/超大批量,防压垮单消费进程。可经 env 调。
+    //实时核验批量上限:每值都要派 job + 等结果,代价高;限批量、禁全量/超大批量,防压垮单消费进程。默认值,可经 config('websocket.realtime_online.max') 调。
     private const REALTIME_ONLINE_MAX = 100;
 
-    //实时核验等待超时(秒):消费方写结果后 rPush 就绪信号、请求方 BLPOP 即时唤醒;此超时只在消费方未响应(队列积压/没跑)时兜底。可经 env 调。
+    //实时核验等待超时(秒):消费方写结果后 rPush 就绪信号、请求方 BLPOP 即时唤醒;此超时只在消费方未响应(队列积压/没跑)时兜底。默认值,可经 config('websocket.realtime_online.timeout') 调。
     private const REALTIME_ONLINE_TIMEOUT = 2;
 
     /**
@@ -83,7 +84,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      * —— 故无论查几个用户,每台服务器都只一次跨 worker 核验 + 一个结果 hash(不再每用户查一次)。
      * 精确到当下,但代价仍高(异步 job + 跨 worker 核验 + 可能 2s 超时尾),故仅限:
      *   - **维度必须是 uniqueDimensions(单连接维度)**——非 unique 维度每值可能多连接、fan-out 不可控,改用 checkHeartbeatOnlineByDim;
-     *   - **批量有上限**(REALTIME_ONLINE_MAX,env WS_REALTIME_ONLINE_MAX),超限抛异常;禁全量。
+     *   - **批量有上限**(REALTIME_ONLINE_MAX,config('websocket.realtime_online.max')),超限抛异常;禁全量。
      * @param string $dim    维度名(须在 WsBindStrategy::uniqueDimensions() 内)
      * @param array  $values 维度值列表(数量 ≤ 上限)
      * @return array value => bool(任一连接实时在线即 true)
@@ -103,7 +104,7 @@ class WsPushMsgComponent extends BaseCoreComponent
             return [];
         }
         //批量上限(禁全量/超大批量);下限 clamp 1,防 env 配 0/负导致恒抛异常
-        $max = max(1, (int) env('WS_REALTIME_ONLINE_MAX', self::REALTIME_ONLINE_MAX));
+        $max = max(1, (int) config('websocket.realtime_online.max', self::REALTIME_ONLINE_MAX));
         if (count($values) > $max) {
             throw new \InvalidArgumentException(
                 "checkRealtimeOnlineByDim 批量上限 {$max},传入 " . count($values) . ";大批量/全量在线请用 checkHeartbeatOnlineByDim"
@@ -113,7 +114,7 @@ class WsPushMsgComponent extends BaseCoreComponent
         $wstkCpt   = get_inject_obj(WsTokenComponent::class);
         $serverSet = $wssCpt->getServerSetCached();//在线服务器集合(进程级短缓存,O(1) isset 查找)
         //下限 clamp 1s,防 env 配 0(=BLPOP 永久阻塞)/负导致退化
-        $timeout = max(1, (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT));
+        $timeout = max(1, (int) config('websocket.realtime_online.timeout', self::REALTIME_ONLINE_TIMEOUT));
         $redis   = $this->redis;
 
         //结果默认全 false;后续仅把"确有在线连接"的值翻 true
