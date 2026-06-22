@@ -95,28 +95,6 @@ class HttpClient
     }
 
     /**
-     * coPost请求(兼容使用老包的方法)
-     * @param string $url
-     * @param string|array $data
-     * @param array $header
-     */
-    public static function coPost(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
-    {
-        return self::coRequest($url, $data, 'POST', $header, $timeout);
-    }
-
-    /**
-     * curlPost请求(兼容使用老包的方法)
-     * @param string $url
-     * @param string|array $data
-     * @param array $header
-     */
-    public static function curlPost(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
-    {
-        return self::curlRequest($url, $data, 'POST', $header, $timeout);
-    }
-
-    /**
      * 协程客户端发送请求。
      * 返回 ['statusCode','headers','body','errCode','errMsg']：
      *   - 成功 errCode=0；

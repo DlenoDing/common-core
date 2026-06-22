@@ -243,16 +243,12 @@ class EloquentBuilder extends Builder
      *
      * @param string|string[] $columns 检索列
      * @param string          $text    检索词(绑定为参数,安全)
-     * @param string|bool|null $mode    检索模式:true/'BOOLEAN'→布尔模式; 'LANGUAGE'/null/false→自然语言(默认);
-     *                                  'LANGUAGE_EX'/'EXPANSION'→自然语言+query expansion; 其它非白名单值→按自然语言处理
+     * @param string|null $mode    检索模式:'BOOLEAN'→布尔模式; 'LANGUAGE'/null→自然语言(默认);
+     *                             'LANGUAGE_EX'/'EXPANSION'→自然语言+query expansion; 其它非白名单值→按自然语言处理
      * @return $this
      */
     public function whereFullTextDiy($columns, $text, $mode = null)
     {
-        // 兼容旧布尔签名:true=布尔模式,false/null=自然语言
-        if (is_bool($mode)) {
-            $mode = $mode ? 'BOOLEAN' : null;
-        }
         $options = match ($mode) {
             'BOOLEAN'                  => ['mode' => 'boolean'],
             'LANGUAGE_EX', 'EXPANSION' => ['expanded' => true], // MySQL: 自然语言 + WITH QUERY EXPANSION

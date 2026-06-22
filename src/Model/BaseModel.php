@@ -458,18 +458,6 @@ class BaseModel extends Model
     }
 
     /**
-     * 老方法
-     * @param null $alias 指定别名，不指定则使用属性定义
-     * @param null $connection 数据连接名，不指定则使用属性定义
-     * @param null $primaryId 分表时使用，用于根据$primaryId定位所属的表
-     * @return \Hyperf\Database\Model\Builder
-     */
-    public static function getModel($alias = null, $connection = null, $primaryId = null)
-    {
-        return static::query($alias, $connection, $primaryId);
-    }
-
-    /**
      * 按主键 id 路由到所属分表并查询单条(分表时按 id 反查表;非分表则查基表)。
      * @param int|string $primaryId 主键值
      * @return static|null
