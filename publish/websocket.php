@@ -60,11 +60,4 @@ return [
         // 独立控制队列进程处理多少条后自动重启;0=不限。
         'max_messages' => (int) env('WS_DEDICATED_MAX_MESSAGES', 0),
     ],
-
-    // WS 反向索引 stale 清扫调优（仅 Redis < 7.4 才跑；7.4+ 走 HEXPIRE 自洁、本段无效）。
-    // 按业务量调：连接/维度多、清理要更快 → 调大 scan_count / 调小 interval；反之调小 scan_count / 调大 interval 降负载。
-    'sweep' => [
-        'scan_count' => (int) env('WS_SWEEP_SCAN_COUNT', 500),   // 每批 SSCAN 注册表的量
-        'interval'   => (int) env('WS_SWEEP_INTERVAL', 60),      // 两次清扫最小间隔(秒)
-    ],
 ];
