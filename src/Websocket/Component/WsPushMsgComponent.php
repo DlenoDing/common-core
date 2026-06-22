@@ -97,8 +97,8 @@ class WsPushMsgComponent extends BaseCoreComponent
                 "checkRealtimeOnlineByDim 仅支持 uniqueDimensions 维度,[{$dim}] 非 unique;多连接维度的在线判断请用 checkHeartbeatOnlineByDim"
             );
         }
-        //批量上限(禁全量/超大批量)
-        $max = (int) env('WS_REALTIME_ONLINE_MAX', self::REALTIME_ONLINE_MAX);
+        //批量上限(禁全量/超大批量);下限 clamp 1,防 env 配 0/负导致恒抛异常
+        $max = max(1, (int) env('WS_REALTIME_ONLINE_MAX', self::REALTIME_ONLINE_MAX));
         if (count($values) > $max) {
             throw new \InvalidArgumentException(
                 "checkRealtimeOnlineByDim 批量上限 {$max},传入 " . count($values) . ";大批量/全量在线请用 checkHeartbeatOnlineByDim"
@@ -108,7 +108,8 @@ class WsPushMsgComponent extends BaseCoreComponent
         $wssCpt  = get_inject_obj(WsServerComponent::class);
         $wstkCpt = get_inject_obj(WsTokenComponent::class);
         $servers = $wssCpt->getServerList();
-        $timeout = (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT);
+        //下限 clamp 1s,防 env 配 0(=BLPOP 永久阻塞)/负导致退化
+        $timeout = max(1, (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT));
         $redis   = $this->redis;
 
         //结果默认全 false;后续仅把"确有在线连接"的值翻 true

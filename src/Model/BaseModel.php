@@ -134,7 +134,7 @@ class BaseModel extends Model
     /**
      * Create a new Model model instance.
      */
-    public function __construct(array $attributes = [], $connection = null, $tableName = null)
+    public function __construct(array $attributes = [], $connection = null, $tableName = null, $primaryId = null)
     {
         $connection && $this->setConnection($connection);
 
@@ -142,7 +142,17 @@ class BaseModel extends Model
             $this->baseTable = $this->table ?? Str::snake(Str::pluralStudly(class_basename($this)));
         }
         if ($this->splitMode != self::SPLIT_MODE_NO) {
-            $primaryId = $attributes[$this->primaryKey] ?? null;
+            if ($primaryId === null) {
+                //无显式主键:沿用原行为——属性里带主键值则按其路由(各模式一致,如 new static(['id'=>x]))
+                $primaryId = $attributes[$this->primaryKey] ?? null;
+            } elseif ($this->splitMode != self::SPLIT_MODE_NUM) {
+                //有显式主键(来自 query() 按主键查询):**仅 NUM 模式**在构造期直达目标分表(纯算术、无 DB),
+                //省掉空属性构造先按当前 num 初始化(splitGetCurrTableByNum 会查 information_schema)的多余开销。
+                //**时间分表不在构造期按主键路由**:其按主键定位要查 information_schema(splitGetTableByPrimaryIdModeTime),
+                //放构造期会与构造后的 splitSetTableByPrimaryId 重复查询,且该方法返回带前缀的物理表名、喂进 splitCheckInitTable
+                //会前缀歧义/误建表;故时间模式构造期仍按当前时间(date(),无 DB)初始化,主键路由交给 splitSetTableByPrimaryId。
+                $primaryId = null;
+            }
             $this->splitInitTable($tableName, $primaryId);
         }
         parent::__construct($attributes);
@@ -506,11 +516,13 @@ class BaseModel extends Model
      */
     public static function query($alias = null, $connection = null, $primaryId = null, $tableName = null)
     {
-        $instance = new static([], $connection, $tableName);
+        //$primaryId 传入构造:分表读路径直达目标分表并 ensure 之,不再先初始化当前分表(省多余 check/DDL)
+        $instance = new static([], $connection, $tableName, $primaryId);
         if (!empty($alias)) {
             $instance->setAlias($alias);
         }
         if (!empty($primaryId)) {
+            //与构造内路由一致(同一 splitGetTableByPrimaryId*),作最终表名兜底,幂等
             $instance->splitSetTableByPrimaryId($primaryId);
         }
         //IDE会提示类型不一致，忽略
@@ -611,7 +623,11 @@ class BaseModel extends Model
     {
         $data = [];
         foreach ($item as $k => $v) {
-            $data[$k] = Db::raw('values(' . $k . ')');
+            //列名无法用绑定参数,作为 public helper 防标识符注入:白名单校验后再反引号包裹拼 raw。
+            if (!preg_match('/^[A-Za-z0-9_]+$/', (string) $k)) {
+                throw new \InvalidArgumentException('insertOnDuplicateVal: illegal column name [' . $k . ']');
+            }
+            $data[$k] = Db::raw('values(`' . $k . '`)');
         }
         return $data;
     }

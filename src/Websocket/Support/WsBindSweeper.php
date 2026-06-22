@@ -40,16 +40,16 @@ class WsBindSweeper
 
     private static int $lastSweepAt = 0;
 
-    /** 每批 SSCAN 量(可配 config('websocket.sweep.scan_count')，默认 500) */
+    /** 每批 SSCAN 量(可配 config('websocket.sweep.scan_count')，默认 500;下限 1 防 0/负致空转) */
     private static function scanCount(): int
     {
-        return (int) config('websocket.sweep.scan_count', self::DEFAULT_SCAN_COUNT);
+        return max(1, (int) config('websocket.sweep.scan_count', self::DEFAULT_SCAN_COUNT));
     }
 
-    /** 两次清扫最小间隔秒数(可配 config('websocket.sweep.interval')，默认 60) */
+    /** 两次清扫最小间隔秒数(可配 config('websocket.sweep.interval')，默认 60;下限 1 防 0/负致每 tick 空跑) */
     private static function sweepInterval(): int
     {
-        return (int) config('websocket.sweep.interval', self::DEFAULT_SWEEP_INTERVAL);
+        return max(1, (int) config('websocket.sweep.interval', self::DEFAULT_SWEEP_INTERVAL));
     }
 
     public static function tick(): void

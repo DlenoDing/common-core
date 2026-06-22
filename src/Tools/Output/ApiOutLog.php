@@ -53,6 +53,8 @@ class ApiOutLog
                 array_walk($allowHeaders, function (&$val) {
                     $val = strtolower($val);
                 });
+                //敏感头过滤清单走业务 config('app.filter_headers')(便于排查时按需单独开关某个头);
+                //包内仅给最小兜底默认,client-token/authorization/cookie 等由业务在 app.filter_headers 里配置。
                 $filterHeaders = config('app.filter_headers', [
                     'content-type',
                     'client-key',

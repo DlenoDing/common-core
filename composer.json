@@ -1,6 +1,7 @@
 {
     "name": "dleno/common-core",
     "type": "library",
+    "license": "proprietary",
     "description": "common core",
     "keywords": ["common-core"],
     "require": {

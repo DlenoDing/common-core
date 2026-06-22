@@ -183,12 +183,14 @@ abstract class AbstractModuleBeforeAspect extends AbstractAspect
                 get_header_val('Client-Token', '');
         $sign = md5($str);
         if (get_header_val('Client-Sign', '') <> $sign) {
+            //安全:绝不记录 $str(含 signKey/Client-Token/原始 body)。仅留不可逆的 expected/provided 签名(md5)
+            //与 body 摘要供排查;signKey 永不入日志。
             Logger::systemLog('SIGN')
                   ->debug(
                       sprintf(
-                          'Message::%s||SignStr::%s',
-                          "签名无效：[{$sign}|" . get_header_val('Client-Sign', '') . "]",
-                          $str
+                          'Message::%s',
+                          "签名无效：[expected={$sign}|provided=" . get_header_val('Client-Sign', '')
+                          . "|bodyMd5=" . md5($postRawBody) . "]"
                       )
                   );
             throw new HttpException('Error Sign', RcodeConf::ERROR_SIGN);
