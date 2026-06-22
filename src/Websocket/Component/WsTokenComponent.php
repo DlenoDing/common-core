@@ -66,8 +66,6 @@ class WsTokenComponent extends BaseCoreComponent
                 $this->redis->hSet($dimKey, $serverFdStr, array_to_json($serverFd));
                 //过期时间与用户数据缓存一致：HEXPIRE 每 field 独立 TTL(死连接 field 到期自洁)
                 $this->expireDimTtl($dimKey, $serverFdStr);
-                //同步心跳 presence 索引:把本 (sv,fd) 加入该值
-                $this->presenceAdd($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
             }
 
             //单连接维度(uniqueDimensions):同维度值已有别的连接 → 踢旧(后登录踢前登录)。
@@ -76,6 +74,15 @@ class WsTokenComponent extends BaseCoreComponent
             if (!empty($unique)) {
                 $this->enforceUnique($unique, $dims, $addressable, $serverFdStr);
             }
+        }
+
+        //心跳 presence 索引:只为「可在线检查」维度(onlineCheckDimensions ∪ uniqueDimensions)维护,把本 (sv,fd) 加入该值。
+        //不在此列的维度(如只用于寻址推送的 device_type)不建 presence——不能查、建了无意义。
+        foreach ($this->onlineCheckDims() as $dim) {
+            if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                continue;
+            }
+            $this->presenceAdd($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
         }
     }
 
@@ -147,9 +154,14 @@ class WsTokenComponent extends BaseCoreComponent
                     continue;
                 }
                 $this->expireDimTtl(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
-                //续期心跳 presence:重加本 (sv,fd) + HEXPIRE(field 缺失即重建,覆盖 HEXPIRE-miss)
-                $this->presenceAdd($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
             }
+        }
+        //续期心跳 presence(仅可在线检查维度):重加本 (sv,fd) + HEXPIRE(field 缺失即重建,覆盖 HEXPIRE-miss)
+        foreach ($this->onlineCheckDims() as $dim) {
+            if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                continue;
+            }
+            $this->presenceAdd($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
         }
     }
 
@@ -203,6 +215,19 @@ class WsTokenComponent extends BaseCoreComponent
         "if next(m)==nil then redis.call('HDEL',KEYS[1],ARGV[1]) " .
         "else redis.call('HSET',KEYS[1],ARGV[1],cjson.encode(m)) redis.call('HEXPIRE',KEYS[1],ARGV[4],'FIELDS',1,ARGV[1]) end " .
         "return 1";
+
+    /**
+     * 「可在线检查」维度集合 = onlineCheckDimensions() ∪ uniqueDimensions()(框架自动并入 unique 防漏设)。
+     * presence 索引只为这些维度维护——其余维度(如仅寻址推送的低基数 device_type)不建,不能查。
+     * @return string[]
+     */
+    private function onlineCheckDims(): array
+    {
+        return array_keys(array_flip(array_merge(
+            $this->bindStrategy->onlineCheckDimensions(),
+            $this->bindStrategy->uniqueDimensions()
+        )));
+    }
 
     /** setBind/refreshBind:把本 (sv,fd) 加入该值 presence 并续期(单 key Lua 原子;field 缺失即重建)。 */
     private function presenceAdd(string $dim, $value, string $sv, $fd): void
@@ -258,9 +283,14 @@ class WsTokenComponent extends BaseCoreComponent
                         continue;
                     }
                     $this->redis->hDel(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
-                    //心跳 presence:精确删本 (sv,fd)(空则收缩 sv / HDEL field)
-                    $this->presenceDel($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
                 }
+            }
+            //心跳 presence(仅可在线检查维度):精确删本 (sv,fd)(空则收缩 sv / HDEL field)
+            foreach ($this->onlineCheckDims() as $dim) {
+                if (!array_key_exists($dim, $dims) || $dims[$dim] === null) {
+                    continue;
+                }
+                $this->presenceDel($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
             }
         }
         //始终删除 serverFd 主绑定数据(清理,无论有无维度)

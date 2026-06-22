@@ -67,4 +67,19 @@ interface WsBindStrategyInterface
      * @return string[] 需强制单连接的维度名列表
      */
     public function uniqueDimensions(): array;
+
+    /**
+     * 声明哪些维度可被「心跳级在线检查」(checkHeartbeatOnlineByDim / checkHeartbeatOnlineAllByDim) 按值查询。
+     * 框架为这些维度(以及 uniqueDimensions(),见下)在 setBind 时维护 presence 索引;不在此列的维度不能做在线检查。
+     *
+     *  - **必须是 bindDimensions() 返回维度名的子集**(否则该维度未被绑定、presence 无从建);**不要求**是 addressableDimensions()
+     *    (心跳 presence 独立于寻址用的反向索引)。
+     *  - **业务承诺:所列维度的单 value 连接数可控**(如 account_id 多端也就几条)。**切勿放低基数分组维度**
+     *    (device_type/channel/language 这类一个 value 挂海量连接),那是寻址推送(addressableDimensions)该干的,拿来做在线检查会拖垮 Redis。
+     *  - **框架会自动并入 uniqueDimensions()**:unique 维度每值单连接、天然适合检查,即使没列进本方法也允许检查(防漏设)。
+     *  - 默认 [](见 AbstractWsBindStrategy):此时仅 uniqueDimensions 维度可被在线检查。
+     *
+     * @return string[] 可在线检查的维度名列表
+     */
+    public function onlineCheckDimensions(): array;
 }

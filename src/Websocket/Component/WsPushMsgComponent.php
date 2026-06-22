@@ -217,12 +217,13 @@ class WsPushMsgComponent extends BaseCoreComponent
      * 【取值约定 / 如何"查全量"】$values 必须是**调用方显式列出的、要查询的维度值清单**。
      * 本方法没有"全量"哨兵,也不自动发现"该维度下所有已绑定的值"——把你关心的全部值一次传进来即可(完整清单也行)。
      * 真要枚举某维度当前所有在线值,需 SCAN `<prefix>online:<dim>:*` 键空间(集群跨节点、开销大),本方法不内置。
-     * @param string $dim    维度名(须在 WsBindStrategy::addressableDimensions() 内,presence 才有维护)
+     * @param string $dim    维度名(须在 WsBindStrategy::onlineCheckDimensions() ∪ uniqueDimensions() 内,否则抛异常;presence 只为这些维度维护)
      * @param array  $values 要查询的维度值清单(显式列出,无"全量"哨兵;大批量/完整清单均可)
      * @return array value => bool
      */
     public function checkHeartbeatOnlineByDim(string $dim, array $values, int $concurrent = 100)
     {
+        $this->assertOnlineCheckDim($dim);
         $values = array_values(array_unique($values));
         if ($values === []) {
             return [];
@@ -290,6 +291,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      */
     public function checkHeartbeatOnlineAllByDim(string $dim, int $concurrent = 100): array
     {
+        $this->assertOnlineCheckDim($dim);
         $serverSet = get_inject_obj(WsServerComponent::class)->getServerSetCached();
         $redis     = $this->redis;
         $count     = WsKeys::presenceBucketCount();
@@ -329,6 +331,22 @@ class WsPushMsgComponent extends BaseCoreComponent
             }
         }
         return $result;
+    }
+
+    /**
+     * 校验 $dim 可被心跳在线检查:必须 ∈ onlineCheckDimensions() ∪ uniqueDimensions()(框架自动并入 unique 防漏设)。
+     * 否则抛异常——presence 只为这些维度维护;低基数分组维度(device_type/channel 等)仅供 pushToDimMessage 寻址推送,不支持在线检查。
+     */
+    private function assertOnlineCheckDim(string $dim): void
+    {
+        $s   = get_inject_obj(WsBindStrategyInterface::class);
+        $set = array_flip(array_merge($s->onlineCheckDimensions(), $s->uniqueDimensions()));
+        if (!isset($set[$dim])) {
+            throw new \InvalidArgumentException(
+                "checkHeartbeatOnlineByDim 仅支持 onlineCheckDimensions(∪uniqueDimensions) 维度,[{$dim}] 不在其中;"
+                . "低基数分组维度仅用于 pushToDimMessage,不支持在线检查"
+            );
+        }
     }
 
     /**

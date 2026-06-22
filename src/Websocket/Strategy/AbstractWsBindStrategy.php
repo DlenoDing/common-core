@@ -28,4 +28,14 @@ abstract class AbstractWsBindStrategy implements WsBindStrategyInterface
     {
         return [];
     }
+
+    /**
+     * 默认：无额外在线检查维度（此时仅 uniqueDimensions 维度可被在线检查——框架自动并入）。
+     * 要让某非 unique 维度（如多端 account_id）可被 checkHeartbeatOnlineByDim 查询，override 本方法返回它。
+     * @return string[]
+     */
+    public function onlineCheckDimensions(): array
+    {
+        return [];
+    }
 }
