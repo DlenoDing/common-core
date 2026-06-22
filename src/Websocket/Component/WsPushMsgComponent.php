@@ -77,8 +77,11 @@ class WsPushMsgComponent extends BaseCoreComponent
     private const REALTIME_ONLINE_TIMEOUT = 2;
 
     /**
-     * 【实时 socket 级】在线核验:派 CheckOnlineJob 到目标 server 逐 fd 实时核验(getClientInfo)+ 轮询 check key 聚合。
-     * 精确到当下,但代价高(异步 job + 轮询 + 可能 2s 超时尾),故仅限:
+     * 【实时 socket 级】在线核验:把所有待查值在「同一服务器」上的全部 fd **汇成一批**,
+     * 每服务器只下一个 CheckOnlineJob(一次 getClientInfo 批量核验)、只回一个结果 hash;
+     * 请求方 BLPOP 即时唤醒、收齐各服务器结果后,再按值归集(该值任一连接在线即在线)。
+     * —— 故无论查几个用户,每台服务器都只一次跨 worker 核验 + 一个结果 hash(不再每用户查一次)。
+     * 精确到当下,但代价仍高(异步 job + 跨 worker 核验 + 可能 2s 超时尾),故仅限:
      *   - **维度必须是 uniqueDimensions(单连接维度)**——非 unique 维度每值可能多连接、fan-out 不可控,改用 checkHeartbeatOnlineByDim;
      *   - **批量有上限**(REALTIME_ONLINE_MAX,env WS_REALTIME_ONLINE_MAX),超限抛异常;禁全量。
      * @param string $dim    维度名(须在 WsBindStrategy::uniqueDimensions() 内)
@@ -101,85 +104,93 @@ class WsPushMsgComponent extends BaseCoreComponent
                 "checkRealtimeOnlineByDim 批量上限 {$max},传入 " . count($values) . ";大批量/全量在线请用 checkHeartbeatOnlineByDim"
             );
         }
-        //去重:Parallel 以维度值为结果键,重复值会相互覆盖、漏掉条目
-        $values   = array_values(array_unique($values));
-        $wssCpt   = get_inject_obj(WsServerComponent::class);
-        $wstkCpt  = get_inject_obj(WsTokenComponent::class);
-        $servers  = $wssCpt->getServerList();
-        $timeout  = (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT);
-        $redis    = $this->redis;
+        $values  = array_values(array_unique($values));
+        $wssCpt  = get_inject_obj(WsServerComponent::class);
+        $wstkCpt = get_inject_obj(WsTokenComponent::class);
+        $servers = $wssCpt->getServerList();
+        $timeout = (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT);
+        $redis   = $this->redis;
+
+        //结果默认全 false;后续仅把"确有在线连接"的值翻 true
+        $result = array_fill_keys($values, false);
+
+        //① 并发取每个值的绑定反向索引(仅 HGETALL,廉价;Parallel 以值为结果键,故前面已去重)
         $parallel = new Parallel($concurrent);
         foreach ($values as $value) {
-            $parallel->add(
-                function () use ($wstkCpt, $servers, $dim, $value, $timeout, $redis) {
-                    //per-value rid:每值独立 rid → 结果 hash 与就绪信号都按 rid 隔离;跨 call、同 call 内跨 value 都互不抢(#7),
-                    //也让各值的 BLPOP 只收到自己的就绪信号。
-                    $rid        = bin2hex(random_bytes(8));
-                    $valueBinds = $wstkCpt->getDimBind($dim, $value);
-                    if (empty($valueBinds)) {
-                        return false;
-                    }
-                    //按服务器聚合该维度值的全部 fd(同一服务器多连接合并为一个批量任务)
-                    $svFds = [];//sv => [fd, ...]
-                    foreach ($valueBinds as $field => $serverFdJson) {
-                        $serverFd = json_to_array($serverFdJson);
-                        $sv = $serverFd['sv'];
-                        $fd = (int) $serverFd['fd'];
-                        if (!in_array($sv, $servers)) {
-                            $wstkCpt->delDimBind($dim, $value, $field);//对应服务器已无效,删除该连接项
-                            continue;
-                        }
-                        $svFds[$sv][] = $fd;
-                    }
-                    if (empty($svFds)) {
-                        return false;
-                    }
-                    //每服务器一个批量任务(该用户在该服务器上的全部 fd),rid 下传
-                    foreach ($svFds as $sv => $fds) {
-                        AsyncQueue::push((new CheckOnlineJob($fds, $rid))->setQueue(self::getQueue($sv)));
-                    }
-                    //等结果:消费方写完某服务器的结果 hash 后 rPush 其 sv 到就绪信号;这里 BLPOP 即时唤醒
-                    //(无 10ms 轮询/无 EXISTS 风暴),读该服务器结果 hash,任一 fd '1' 即在线(短路)。
-                    //BLPOP 用 1s 整秒分片 + 截止时间(不依赖 phpredis 浮点超时);消费方没响应才走超时兜底。
-                    $readyKey = WsKeys::checkReadyKey($rid);
-                    $pendingSv = $svFds;            // 待报告服务器集合(sv => fds)
-                    $online    = false;
-                    try {
-                        $deadline = microtime(true) + $timeout;
-                        while (!empty($pendingSv) && microtime(true) < $deadline) {
-                            $sig = $redis->blPop([$readyKey], 1);//协程下非阻塞;无信号则 1s 后返回空,复查截止
-                            if (empty($sig)) {
-                                continue;
-                            }
-                            $sv = $sig[1];
-                            if (!isset($pendingSv[$sv])) {
-                                continue;
-                            }
-                            $vals = $redis->hGetAll(WsKeys::checkResultKey($rid, $sv));
-                            foreach ($pendingSv[$sv] as $fd) {
-                                if (($vals[(string) $fd] ?? null) === '1') {
-                                    $online = true;
-                                    break 2;//任一 fd 在线即判在线
-                                }
-                            }
-                            unset($pendingSv[$sv]);//该服务器已报告且无在线 fd
-                        }
-                    } catch (\Throwable $e) {
-                        $online = false;
-                    } finally {
-                        //清理本 rid 的就绪信号与结果 hash(均另有 TTL 兜底)
-                        $redis->del($readyKey);
-                        foreach (array_keys($svFds) as $sv) {
-                            $redis->del(WsKeys::checkResultKey($rid, $sv));
-                        }
-                    }
-                    return $online;
-                },
-                $value
-            );
+            $parallel->add(fn () => $wstkCpt->getDimBind($dim, $value), (string) $value);
+        }
+        $bindsByValue = $parallel->wait(false);//(string)value => binds(hash);取绑定失败的值缺席→保持 false
+
+        //② 跨所有值,按服务器汇总全部 fd(同服务器所有用户的 fd 合成一批);并记下每个值占用的 (sv,fd) 以便回填
+        $valueConns = [];//(string)value => [[sv, fd], ...]
+        $svFds      = [];//sv => [fd => fd]  (去重)
+        foreach ($values as $value) {
+            $binds = $bindsByValue[(string) $value] ?? [];
+            if (empty($binds) || !is_array($binds)) {
+                continue;
+            }
+            foreach ($binds as $field => $serverFdJson) {
+                $serverFd = json_to_array($serverFdJson);
+                $sv = $serverFd['sv'];
+                $fd = (int) $serverFd['fd'];
+                if (!in_array($sv, $servers)) {
+                    $wstkCpt->delDimBind($dim, $value, $field);//对应服务器已无效,删除该连接项
+                    continue;
+                }
+                $valueConns[(string) $value][] = [$sv, $fd];
+                $svFds[$sv][$fd]               = $fd;
+            }
+        }
+        if (empty($svFds)) {
+            return $result;//无任何有效连接,全 false
         }
 
-        return $parallel->wait(false);
+        //③ 每服务器只下一个批量 job(该服务器上所有待查用户的全部 fd 一次核验),单 rid(本次调用内共用,跨调用随机隔离 #7)
+        $rid = bin2hex(random_bytes(8));
+        foreach ($svFds as $sv => $fds) {
+            AsyncQueue::push((new CheckOnlineJob(array_values($fds), $rid))->setQueue(self::getQueue($sv)));
+        }
+
+        //④ 等结果:消费方写完某服务器的结果 hash 后 rPush 其 sv 到就绪信号;这里 BLPOP 即时唤醒收齐各服务器结果。
+        //   BLPOP 用 1s 整秒分片 + 截止时间(不依赖 phpredis 浮点超时);消费方没响应才走超时兜底。
+        $readyKey  = WsKeys::checkReadyKey($rid);
+        $pendingSv = $svFds;        // 待报告服务器集合(sv => fds),收齐一台移除一台
+        $fdOnline  = [];            // sv => (fd => '1'/'0')
+        try {
+            $deadline = microtime(true) + $timeout;
+            while (!empty($pendingSv) && microtime(true) < $deadline) {
+                $sig = $redis->blPop([$readyKey], 1);//协程下非阻塞;无信号则 1s 后返回空,复查截止
+                if (empty($sig)) {
+                    continue;
+                }
+                $sv = $sig[1];
+                if (!isset($pendingSv[$sv])) {
+                    continue;//非本批/重复信号
+                }
+                $fdOnline[$sv] = $redis->hGetAll(WsKeys::checkResultKey($rid, $sv));
+                unset($pendingSv[$sv]);//该服务器已收齐
+            }
+        } catch (\Throwable $e) {
+            //出错则按已收集到的部分结果归集,未收齐的值保持 false(超时兜底语义一致)
+        } finally {
+            //清理本 rid 的就绪信号与结果 hash(均另有 TTL 兜底)
+            $redis->del($readyKey);
+            foreach (array_keys($svFds) as $sv) {
+                $redis->del(WsKeys::checkResultKey($rid, $sv));
+            }
+        }
+
+        //⑤ 按值归集:该值名下任意 (sv,fd) 实时在线即判在线
+        foreach ($valueConns as $value => $conns) {
+            foreach ($conns as [$sv, $fd]) {
+                if (($fdOnline[$sv][(string) $fd] ?? null) === '1') {
+                    $result[$value] = true;
+                    break;
+                }
+            }
+        }
+
+        return $result;
     }
 
     /**

@@ -101,7 +101,7 @@ class WsKeys
 
     /**
      * 在线检查结果 HASH key:<prefix>check:online:<rid>:<sv>(field=fd,value '1'/'0')。
-     * 含 $rid(每值唯一)做请求隔离——并发检查同一 (sv,fd) 互不覆盖;同一服务器一批 fd 的结果聚成一个 hash(批量存取)。
+     * 含 $rid(每次检查调用唯一)做请求隔离——并发调用互不覆盖;一台服务器上「本次所有待查用户的全部 fd」结果聚成一个 hash(批量存取)。
      */
     public static function checkResultKey(string $rid, string $serverKey): string
     {
