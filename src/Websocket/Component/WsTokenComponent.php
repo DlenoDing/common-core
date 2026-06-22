@@ -207,7 +207,7 @@ class WsTokenComponent extends BaseCoreComponent
     /** setBind/refreshBind:把本 (sv,fd) 加入该值 presence 并续期(单 key Lua 原子;field 缺失即重建)。 */
     private function presenceAdd(string $dim, $value, string $sv, $fd): void
     {
-        $this->redis->eval(
+        $this->evalLua(
             self::LUA_PRESENCE_ADD,
             [WsKeys::presenceKey($dim, $value), (string) $value, $sv, (string) $fd, (string) WsKeys::BIND_CACHE_TIME],
             1
@@ -217,11 +217,26 @@ class WsTokenComponent extends BaseCoreComponent
     /** unBind:从该值 presence 精确删本 (sv,fd);sv 的 fd 集空→删 sv;整体空→HDEL field(单 key Lua 原子)。 */
     private function presenceDel(string $dim, $value, string $sv, $fd): void
     {
-        $this->redis->eval(
+        $this->evalLua(
             self::LUA_PRESENCE_DEL,
             [WsKeys::presenceKey($dim, $value), (string) $value, $sv, (string) $fd, (string) WsKeys::BIND_CACHE_TIME],
             1
         );
+    }
+
+    /**
+     * 执行 Lua:优先 EVALSHA(只发 SHA1、不每次重传脚本),NOSCRIPT(脚本未缓存/Redis 重启)时 EVALSHA 返回 false → 回退 EVAL
+     * (执行即缓存,后续命中 EVALSHA)。与 DcsLock::evalLua 同款。
+     * per-script 现算 sha1(短串微秒级,且本类有 ADD/DEL 两个脚本,共用单槽 SHA 会用错哈希);
+     * 连接池下不能靠 getLastError 判 NOSCRIPT,故以"evalSha===false 即回退"兜底(脚本返回 0/1 不为 false,不会误触发)。
+     */
+    private function evalLua(string $script, array $params, int $numKeys)
+    {
+        $ret = $this->redis->evalSha(sha1($script), $params, $numKeys);
+        if ($ret === false) {
+            $ret = $this->redis->eval($script, $params, $numKeys);
+        }
+        return $ret;
     }
 
     /**
