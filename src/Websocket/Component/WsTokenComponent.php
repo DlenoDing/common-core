@@ -66,8 +66,8 @@ class WsTokenComponent extends BaseCoreComponent
                 $this->redis->hSet($dimKey, $serverFdStr, array_to_json($serverFd));
                 //过期时间与用户数据缓存一致：HEXPIRE 每 field 独立 TTL(死连接 field 到期自洁)
                 $this->expireDimTtl($dimKey, $serverFdStr);
-                //同步心跳 presence 索引(从反向索引重算该值的在线 server 集合)
-                $this->setPresence($dim, $dims[$dim]);
+                //同步心跳 presence 索引:把本 (sv,fd) 加入该值
+                $this->presenceAdd($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
             }
 
             //单连接维度(uniqueDimensions):同维度值已有别的连接 → 踢旧(后登录踢前登录)。
@@ -147,8 +147,8 @@ class WsTokenComponent extends BaseCoreComponent
                     continue;
                 }
                 $this->expireDimTtl(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
-                //续期心跳 presence(只 HEXPIRE;field 缺失则懒重建)——server 集合未变,无需重写 value
-                $this->refreshPresence($dim, $dims[$dim]);
+                //续期心跳 presence:重加本 (sv,fd) + HEXPIRE(field 缺失即重建,覆盖 HEXPIRE-miss)
+                $this->presenceAdd($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
             }
         }
     }
@@ -174,58 +174,54 @@ class WsTokenComponent extends BaseCoreComponent
         return $this->redis->rawCommand('HEXPIRE', $full, WsKeys::BIND_CACHE_TIME, 'FIELDS', 1, $field);
     }
 
-    //——— 心跳 presence 索引(ws:online:<dim>:<bucket>,field=value→json([sv,...]))———
-    //写时从反向索引派生该值当前所在的在线 server 集合;读(checkHeartbeatOnlineByDim)按 bucket 批量 HMGET。
-    //语义(codex 校验):unBind 不删 presence(交 field TTL 过期,避免跨 key 竞态误删活跃连接);
-    //refreshBind 只 HEXPIRE 续命,field 不存在(被竞态删/过期但连接仍活)则懒重建一次。
+    //——— 心跳 presence 索引(ws:online:<dim>:<bucket> HASH,field=value→json({sv:{fd:1}}))———
+    //单 bucket key 内用 Lua 原子维护 sv→fd 集合:只动这一个 key、不回读反向索引 → 无"重算"那条跨 key 竞态,集群安全。
+    //setBind/refreshBind → presenceAdd(加 sv/fd + HEXPIRE;field 缺失即重建);unBind → presenceDel(精确删本 sv/fd)。
+    //语义(codex 校验):①能"只删自己 fd"(故用 sv→fd 集而非纯 count);②presence 与反向索引仍是两套 key、非一个事务
+    //(第二套真相),写失败靠 refresh 重建→最终一致非强一致;③崩溃连接(无 unBind)的 fd 残留 field 内,随活连接续期挂着,
+    //该值全无活连接后由 field TTL(HEXPIRE)兜底过期——故"干净即时"只在全程无崩溃时成立,混过崩溃残留则退回 ≤TTL。
+    //HEXPIRE 每次 HSET 后紧跟(field 更新后需重设 field TTL)。
 
-    /**
-     * 从反向索引 HKEYS 派生该维度值当前所在的【在线 server 集合】(field=sv:fd → 取 sv,去重)。
-     * @return string[] sv 列表(可能为空=该值当前无任何绑定)
-     */
-    private function deriveValueServers(string $dim, $value): array
+    //加 (sv,fd)+续期:HGET→并入 sv/fd→HSET→HEXPIRE(field 缺失即新建,天然覆盖 HEXPIRE-miss 重建)
+    private const LUA_PRESENCE_ADD =
+        "local cur=redis.call('HGET',KEYS[1],ARGV[1]) " .
+        "local m={} " .
+        "if cur then local ok,d=pcall(cjson.decode,cur) if ok and type(d)=='table' then m=d end end " .
+        "if type(m[ARGV[2]])~='table' then m[ARGV[2]]={} end " .
+        "m[ARGV[2]][ARGV[3]]=1 " .
+        "redis.call('HSET',KEYS[1],ARGV[1],cjson.encode(m)) " .
+        "redis.call('HEXPIRE',KEYS[1],ARGV[4],'FIELDS',1,ARGV[1]) " .
+        "return 1";
+
+    //删本 (sv,fd):HGET→删 sv/fd→sv 的 fd 集空则删 sv→整体空则 HDEL field,否则 HSET+HEXPIRE
+    private const LUA_PRESENCE_DEL =
+        "local cur=redis.call('HGET',KEYS[1],ARGV[1]) " .
+        "if not cur then return 0 end " .
+        "local ok,m=pcall(cjson.decode,cur) " .
+        "if not ok or type(m)~='table' then return 0 end " .
+        "if type(m[ARGV[2]])=='table' then m[ARGV[2]][ARGV[3]]=nil if next(m[ARGV[2]])==nil then m[ARGV[2]]=nil end end " .
+        "if next(m)==nil then redis.call('HDEL',KEYS[1],ARGV[1]) " .
+        "else redis.call('HSET',KEYS[1],ARGV[1],cjson.encode(m)) redis.call('HEXPIRE',KEYS[1],ARGV[4],'FIELDS',1,ARGV[1]) end " .
+        "return 1";
+
+    /** setBind/refreshBind:把本 (sv,fd) 加入该值 presence 并续期(单 key Lua 原子;field 缺失即重建)。 */
+    private function presenceAdd(string $dim, $value, string $sv, $fd): void
     {
-        $fields = $this->redis->hKeys(WsKeys::bindDimKey($dim, $value));
-        if (!is_array($fields)) {
-            return [];
-        }
-        $svs = [];
-        foreach ($fields as $field) {
-            //field = sv:fd;serverKey 可能含冒号(IPv6/自定义),用最后一个冒号拆,sv 取前段
-            $pos = strrpos((string) $field, ':');
-            if ($pos === false) {
-                continue;
-            }
-            $sv = substr((string) $field, 0, $pos);
-            $svs[$sv] = $sv;//去重
-        }
-        return array_values($svs);
+        $this->redis->eval(
+            self::LUA_PRESENCE_ADD,
+            [WsKeys::presenceKey($dim, $value), (string) $value, $sv, (string) $fd, (string) WsKeys::BIND_CACHE_TIME],
+            1
+        );
     }
 
-    /**
-     * 重算并写 presence:从反向索引派生 server 集合 → HSET 该 value 的 field + HEXPIRE。
-     * 无任何绑定(派生为空)则不写(让旧 field 随 TTL 过期),不主动 HDEL。
-     */
-    private function setPresence(string $dim, $value): void
+    /** unBind:从该值 presence 精确删本 (sv,fd);sv 的 fd 集空→删 sv;整体空→HDEL field(单 key Lua 原子)。 */
+    private function presenceDel(string $dim, $value, string $sv, $fd): void
     {
-        $svs = $this->deriveValueServers($dim, $value);
-        if (empty($svs)) {
-            return;
-        }
-        $pKey = WsKeys::presenceKey($dim, $value);
-        $this->redis->hSet($pKey, (string) $value, array_to_json($svs));
-        $this->hExpireField($pKey, (string) $value);
-    }
-
-    /**
-     * 续期 presence field;若 field 不存在(HEXPIRE 返回 -2:被跨 key 竞态误删/过期但连接仍活)→ 懒重建一次。
-     */
-    private function refreshPresence(string $dim, $value): void
-    {
-        $ret = $this->hExpireField(WsKeys::presenceKey($dim, $value), (string) $value);
-        if (!is_array($ret) || ((int) ($ret[0] ?? -2)) === -2) {
-            $this->setPresence($dim, $value);
-        }
+        $this->redis->eval(
+            self::LUA_PRESENCE_DEL,
+            [WsKeys::presenceKey($dim, $value), (string) $value, $sv, (string) $fd, (string) WsKeys::BIND_CACHE_TIME],
+            1
+        );
     }
 
     /**
@@ -247,6 +243,8 @@ class WsTokenComponent extends BaseCoreComponent
                         continue;
                     }
                     $this->redis->hDel(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
+                    //心跳 presence:精确删本 (sv,fd)(空则收缩 sv / HDEL field)
+                    $this->presenceDel($dim, $dims[$dim], $serverFd['sv'], $serverFd['fd']);
                 }
             }
         }

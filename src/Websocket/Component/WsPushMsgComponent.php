@@ -250,9 +250,9 @@ class WsPushMsgComponent extends BaseCoreComponent
                         $json   = $raw[$sval] ?? false;
                         $online = false;
                         if (is_string($json) && $json !== '') {
-                            $svs = json_to_array($json);
-                            if (is_array($svs)) {
-                                foreach ($svs as $sv) {
+                            $map = json_to_array($json);//{sv:{fd:1}} → 取 server keys
+                            if (is_array($map)) {
+                                foreach ($map as $sv => $fds) {
                                     if (isset($serverSet[$sv])) {
                                         $online = true;//任一所在 server 仍在线 → 在线
                                         break;
@@ -304,11 +304,11 @@ class WsPushMsgComponent extends BaseCoreComponent
                     $out = [];//value => true(仅在线)
                     if (is_array($all)) {
                         foreach ($all as $value => $json) {
-                            $svs = json_to_array($json);
-                            if (!is_array($svs)) {
+                            $map = json_to_array($json);//{sv:{fd:1}} → 取 server keys
+                            if (!is_array($map)) {
                                 continue;
                             }
-                            foreach ($svs as $sv) {
+                            foreach ($map as $sv => $fds) {
                                 if (isset($serverSet[$sv])) {
                                     $out[$value] = true;
                                     break;
