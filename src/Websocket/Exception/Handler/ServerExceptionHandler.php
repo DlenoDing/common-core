@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Websocket\Exception\Handler;
 
 use Hyperf\ExceptionHandler\ExceptionHandler;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Websocket\Annotation\WsExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Exception\ServerException;
-use Dleno\CommonCore\Tools\OutPut;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
@@ -19,6 +17,8 @@ use Throwable;
  */
 class ServerExceptionHandler extends ExceptionHandler
 {
+    use WsErrorResponder;
+
     /**
      * @param ServerException $throwable
      * @param ResponseInterface $response
@@ -33,14 +33,7 @@ class ServerExceptionHandler extends ExceptionHandler
         $code = $code ?: RcodeConf::ERRNO_NORMAL;
 
         //数据返回
-        $output = OutPut::outJsonToError(
-            'System Error',
-            $code,
-            $throwable->getThrowData(),
-            $throwable->getThrowTrace()
-        );
-        return $response->withStatus(200)
-                        ->withBody(new SwooleStream($output));
+        return $this->respond($response, 'System Error', $code, 200, $throwable->getThrowData(), $throwable->getThrowTrace());
     }
 
     public function isValid(Throwable $throwable): bool

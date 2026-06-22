@@ -33,8 +33,12 @@ class HttpExceptionHandler extends \Hyperf\HttpServer\Exception\Handler\HttpExce
         $code    = $throwable->getCode();
         $code    = $code ?: RcodeConf::ERROR_SERVER;
 
+        //HTTP status 必须合法(100–599)。握手响应直接用 $code 作 status,若业务误用 HttpException 带越界码
+        //(如业务码 4001 / <100),Swoole 发送端会产出损坏响应(客户端收到 -3 重置/空响应)→ 越界回退 500。
+        $status = ($code >= 100 && $code <= 599) ? (int) $code : RcodeConf::ERROR_SERVER;
+
         //错误消息放头里，客户端获取
-        return $response->withStatus($code)
+        return $response->withStatus($status)
                         ->withHeader('HandShake-Message', $message);
     }
 

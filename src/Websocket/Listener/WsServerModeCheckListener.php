@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Websocket\Listener;
 
+use Dleno\CommonCore\Websocket\Support\WsProcessSwitch;
 use Hyperf\Contract\ConfigInterface;
 use Hyperf\Event\Annotation\Listener;
 use Hyperf\Event\Contract\ListenerInterface;
 use Hyperf\Framework\Event\BeforeMainServerStart;
-use Hyperf\Server\Server;
 
 /**
  * 启动前置校验：启用 WebSocket 服务时，运行模式必须为 SWOOLE_BASE，否则打印提示并终止整个启动。
@@ -41,15 +41,8 @@ class WsServerModeCheckListener implements ListenerInterface
 
     public function process(object $event): void
     {
-        // 是否启用了 WebSocket 服务（server.servers 已按 ENABLE_WS 解析；只看实际生效配置）
-        $hasWs = false;
-        foreach ((array) $this->config->get('server.servers', []) as $server) {
-            if (($server['type'] ?? null) === Server::SERVER_WEBSOCKET) {
-                $hasWs = true;
-                break;
-            }
-        }
-        if (! $hasWs) {
+        // 仅启用了 WebSocket 服务时才校验
+        if (! WsProcessSwitch::hasWebSocketServer()) {
             return;
         }
 

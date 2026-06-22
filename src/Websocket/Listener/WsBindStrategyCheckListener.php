@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Websocket\Listener;
 
 use Dleno\CommonCore\Websocket\Contract\WsBindStrategyInterface;
-use Hyperf\Contract\ConfigInterface;
+use Dleno\CommonCore\Websocket\Support\WsProcessSwitch;
 use Hyperf\Event\Annotation\Listener;
 use Hyperf\Event\Contract\ListenerInterface;
 use Hyperf\Framework\Event\BeforeMainServerStart;
-use Hyperf\Server\Server;
 use Psr\Container\ContainerInterface;
 
 /**
@@ -26,7 +25,7 @@ use Psr\Container\ContainerInterface;
 #[Listener]
 class WsBindStrategyCheckListener implements ListenerInterface
 {
-    public function __construct(private ConfigInterface $config, private ContainerInterface $container)
+    public function __construct(private ContainerInterface $container)
     {
     }
 
@@ -40,14 +39,7 @@ class WsBindStrategyCheckListener implements ListenerInterface
     public function process(object $event): void
     {
         // 仅启用了 WebSocket 服务时才校验
-        $hasWs = false;
-        foreach ((array) $this->config->get('server.servers', []) as $server) {
-            if (($server['type'] ?? null) === Server::SERVER_WEBSOCKET) {
-                $hasWs = true;
-                break;
-            }
-        }
-        if (! $hasWs) {
+        if (! WsProcessSwitch::hasWebSocketServer()) {
             return;
         }
 

@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Websocket\Exception\Handler;
 
 use Hyperf\ExceptionHandler\ExceptionHandler;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Dleno\CommonCore\Websocket\Annotation\WsExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
-use Dleno\CommonCore\Tools\OutPut;
 use Dleno\CommonCore\Tools\Output\ErrorOutLog;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
@@ -19,6 +17,8 @@ use Throwable;
  */
 class DefaultExceptionHandler extends ExceptionHandler
 {
+    use WsErrorResponder;
+
     /**
      * @param Throwable $throwable
      * @param ResponseInterface $response
@@ -33,9 +33,7 @@ class DefaultExceptionHandler extends ExceptionHandler
         ErrorOutLog::writeLog($throwable, ErrorOutLog::LOG_ERROR);
 
         //数据返回
-        $output = OutPut::outJsonToError('Internal Server Error', RcodeConf::ERROR_SERVER);
-        return $response->withStatus(RcodeConf::ERROR_SERVER)
-                        ->withBody(new SwooleStream($output));
+        return $this->respond($response, 'Internal Server Error', RcodeConf::ERROR_SERVER, RcodeConf::ERROR_SERVER);
     }
 
     public function isValid(Throwable $throwable): bool

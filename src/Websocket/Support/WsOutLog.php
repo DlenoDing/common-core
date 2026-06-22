@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Dleno\CommonCore\Websocket\Support;
 
 use Dleno\CommonCore\Tools\Client;

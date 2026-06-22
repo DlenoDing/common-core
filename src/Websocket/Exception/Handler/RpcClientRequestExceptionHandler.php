@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Websocket\Exception\Handler;
 
 use Hyperf\ExceptionHandler\ExceptionHandler;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\JsonRpc\ResponseBuilder;
 use Hyperf\RpcClient\Exception\RequestException;
 use Dleno\CommonCore\Websocket\Annotation\WsExceptionHandlerLog;
 use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Exception\AppException;
-use Dleno\CommonCore\Tools\OutPut;
 use Dleno\CommonCore\Tools\Output\ErrorOutLog;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
@@ -22,6 +20,8 @@ use Throwable;
  */
 class RpcClientRequestExceptionHandler extends ExceptionHandler
 {
+    use WsErrorResponder;
+
     /**
      * Handle the exception, and return the specified result.
      * @param RequestException $throwable
@@ -35,7 +35,6 @@ class RpcClientRequestExceptionHandler extends ExceptionHandler
         //系统错误日志
         ErrorOutLog::writeLog($throwable, ErrorOutLog::LOG_ERROR);
 
-        //var_dump($throwable->getThrowable());
         if ($throwable->getCode() == ResponseBuilder::SERVER_ERROR && $throwable->getThrowableClassName(
             ) == AppException::class) {
             $code    = $throwable->getThrowableCode();
@@ -48,9 +47,7 @@ class RpcClientRequestExceptionHandler extends ExceptionHandler
         }
 
         //数据返回
-        $output = OutPut::outJsonToError($message, $code);
-        return $response->withStatus(200)
-                        ->withBody(new SwooleStream($output));
+        return $this->respond($response, $message, $code);
     }
 
     /**

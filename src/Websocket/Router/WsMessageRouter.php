@@ -68,18 +68,18 @@ class WsMessageRouter
      */
     public function handle($server, Frame $frame): void
     {
-        //TODO 初始化
+        //初始化
         $this->init();
 
-        //TODO 检查数据格式(入站协议解码,归包)
+        //检查数据格式(入站协议解码,归包)
         $frame->data = WsProtocol::decode($frame->data);
         if ($frame->data === false) {
             goto NOTRETURN;
         }
-        //TODO 解析action
+        //解析action
         $frame->data['action'] = $this->parseAction($frame->data['action']);
 
-        //TODO 初始化Request（系统默认没有，做兼容模拟处理）
+        //初始化Request（系统默认没有，做兼容模拟处理）
         $request = $this->initRequest($frame->data);
 
         $data = null;
@@ -87,13 +87,13 @@ class WsMessageRouter
             //前置钩子(默认 no-op;进业务前可做逐消息风控/频控/审计,抛异常→走下方异常回包)
             $this->wsHook->beforeMessage($server, $frame, $frame->data);
 
-            //TODO 核心处理
+            //核心处理
             $this->coreHandle($request, $frame->data);
 
-            //TODO 转换并检查路由
+            //转换并检查路由
             $this->checkRoute($frame->data['action']);
 
-            //TODO 调用对应Controller,获取返回数据
+            //调用对应Controller,获取返回数据
             $data = get_inject_obj($frame->data['action']['callback'][0])
                 ->{$frame->data['action']['callback'][1]}();
         } catch (\Throwable $exception) {
@@ -147,12 +147,12 @@ class WsMessageRouter
 
     protected function coreHandle(ServerRequestInterface $request, $data)
     {
-        //TODO Hyperf\HttpMessage\Server\Request::stream -> Hyperf\HttpMessage\Stream\SwooleStream
+        //Hyperf\HttpMessage\Server\Request::stream -> Hyperf\HttpMessage\Stream\SwooleStream
         $stream = new SwooleStream(array_to_json($data['params']));
 
         //更新对应数据到本次请求模拟的Request
         $request = $request->withBody($stream)
-            //TODO Hyperf\HttpMessage\Server\Request::parsedBody
+            //Hyperf\HttpMessage\Server\Request::parsedBody
                            ->withParsedBody($data['params']);
 
         //保存Request上下文
@@ -232,7 +232,7 @@ class WsMessageRouter
     {
         $request = clone(WsContext::get(ServerRequestInterface::class));
 
-        //TODO Hyperf\HttpMessage\Server\Request::attributes[Dispatched] -> Hyperf\HttpServer\Router\Dispatched
+        //Hyperf\HttpMessage\Server\Request::attributes[Dispatched] -> Hyperf\HttpServer\Router\Dispatched
         //这里只能新建Dispatched；不能直接$request->getAttribute(Dispatched::class)再修改，否则会影响握手的Request
         $routes     = [
             1,
@@ -241,7 +241,7 @@ class WsMessageRouter
         ];
         $dispatched = new Dispatched($routes);
 
-        //TODO Hyperf\HttpMessage\Server\Request::uri -> Hyperf\HttpMessage\Uri\Uri
+        //Hyperf\HttpMessage\Server\Request::uri -> Hyperf\HttpMessage\Uri\Uri
         /** @var UriInterface $uri */
         $uri = $request->getUri()
                        ->withPath($data['action']['route'])

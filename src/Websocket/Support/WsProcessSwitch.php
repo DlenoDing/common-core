@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Websocket\Support;
 
+use Hyperf\Server\Server;
+
 use function Hyperf\Config\config;
 use function Hyperf\Support\env;
 
@@ -45,5 +47,19 @@ class WsProcessSwitch
     public static function dedicatedQueueEnabled(): bool
     {
         return (bool) config('websocket.dedicated_queue.enable', false);
+    }
+
+    /**
+     * 是否启用了 WebSocket 服务(server.servers 已按 ENABLE_WS 解析,只看实际生效配置)。
+     * 供启动前置校验 Listener 共用,避免各处重复扫描 server.servers。
+     */
+    public static function hasWebSocketServer(): bool
+    {
+        foreach ((array) config('server.servers', []) as $server) {
+            if (($server['type'] ?? null) === Server::SERVER_WEBSOCKET) {
+                return true;
+            }
+        }
+        return false;
     }
 }
