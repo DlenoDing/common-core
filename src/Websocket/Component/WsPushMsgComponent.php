@@ -30,7 +30,7 @@ use function Hyperf\Support\env;
  *
  * 维度名(account_id / device …)一律由调用方(业务)传入，本组件不绑定任何具体维度。
  *
- * 队列名/在线检查 key 全部走 WsKeys（ws:queue:message:/ws:check:online:）。
+ * 队列名/在线检查 key 全部走 WsKeys（ws:queue:message:/ws:check:ready:）。
  * 出站协议封套 {m:cmd, d:data} 在 PushMessageJob 内构造并锁死（归包，业务改不到）；
  * cmd 取值由业务自定义。业务侧用空子类 extends 之即可。
  */
@@ -74,14 +74,14 @@ class WsPushMsgComponent extends BaseCoreComponent
     //实时核验批量上限:每值都要派 job + 等结果,代价高;限批量、禁全量/超大批量,防压垮单消费进程。默认值,可经 config('websocket.realtime_online.max') 调。
     private const REALTIME_ONLINE_MAX = 100;
 
-    //实时核验等待超时(秒):消费方写结果后 rPush 就绪信号、请求方 BLPOP 即时唤醒;此超时只在消费方未响应(队列积压/没跑)时兜底。默认值,可经 config('websocket.realtime_online.timeout') 调。
+    //实时核验等待超时(秒):消费方把结果随 ready payload rPush,请求方 BLPOP 即时唤醒;此超时只在消费方未响应(队列积压/没跑)时兜底。默认值,可经 config('websocket.realtime_online.timeout') 调。
     private const REALTIME_ONLINE_TIMEOUT = 2;
 
     /**
      * 【实时 socket 级】在线核验:把所有待查值在「同一服务器」上的全部 fd **汇成一批**,
-     * 每服务器只下一个 CheckOnlineJob(一次 getClientInfo 批量核验)、只回一个结果 hash;
+     * 每服务器只下一个 CheckOnlineJob(一次 getClientInfo 批量核验)、结果随 ready payload 直接带回;
      * 请求方 BLPOP 即时唤醒、收齐各服务器结果后,再按值归集(该值任一连接在线即在线)。
-     * —— 故无论查几个用户,每台服务器都只一次跨 worker 核验 + 一个结果 hash(不再每用户查一次)。
+     * —— 故无论查几个用户,每台服务器都只一次跨 worker 核验 + 一条 ready payload(不再每用户查一次)。
      * 精确到当下,但代价仍高(异步 job + 跨 worker 核验 + 可能 2s 超时尾),故仅限:
      *   - **维度必须是 uniqueDimensions(单连接维度)**——非 unique 维度每值可能多连接、fan-out 不可控,改用 checkHeartbeatOnlineByDim;
      *   - **批量有上限**(REALTIME_ONLINE_MAX,config('websocket.realtime_online.max')),超限抛异常;禁全量。
@@ -208,7 +208,7 @@ class WsPushMsgComponent extends BaseCoreComponent
     /**
      * 【心跳级】在线判断:仅凭绑定反向索引 getDimBind 的新鲜度——某维度值名下存在「绑定项 + 其 server 仍在线」即视为在线。
      * 精度为心跳/TTL 粒度(Redis7.4+ HEXPIRE 自动剔除过期 field;心跳每 <idle_time 续期,刚断未过期的连接最多
-     * ≤BIND_CACHE_TIME 秒内仍判在线),但极廉价:每值仅 1 次 HGETALL,无 job/轮询/2s 尾。
+     * ≤BIND_CACHE_TIME 秒内仍判在线),但极廉价:每值仅 1 次 HKEYS,无 job/轮询/2s 尾。
      * 与 pushToDimMessage 同一套绑定真相:此处判"在线" ≈ "现在推一条消息会有去处"。
      * 对任意维度(unique 或多连接)均可用;顺带清理 server 已下线的陈旧绑定项。
      *
@@ -219,7 +219,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      * 注:真要"枚举该维度当前所有已绑定的值",需 SCAN `<prefix>bind:<dim>:*` 键空间(集群跨节点、开销大),
      * 本方法不内置;如确需,自行枚举出值再传入。
      *
-     * 成本:N 个值 = N 次 HGETALL(每值一个独立 hash key,集群下分散各 slot),内部按 $concurrent 并发重叠 RTT。
+     * 成本:N 个值 = N 次 HKEYS(每值一个独立 hash key,集群下分散各 slot),内部按 $concurrent 并发重叠 RTT。
      * @param string $dim    维度名
      * @param array  $values 要查询的维度值清单(显式列出,无"全量"哨兵;大批量/完整清单均可)
      * @return array value => bool

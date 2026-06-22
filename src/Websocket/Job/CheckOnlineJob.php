@@ -30,7 +30,7 @@ class CheckOnlineJob extends BaseJob
     private $fds;
 
     /**
-     * @var string 请求隔离 rid(由 checkRealtimeOnlineByDim 生成下传),写结果 key 时带上,避免并发互相覆盖
+     * @var string 请求隔离 rid(由 checkRealtimeOnlineByDim 生成下传),ready key 带上它避免并发互相串信号
      */
     private $rid;
 
