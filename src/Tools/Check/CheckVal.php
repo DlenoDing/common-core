@@ -47,11 +47,10 @@ class CheckVal
             return false;
         }
         $xmlParser = xml_parser_create();
-        if (!xml_parse($xmlParser, $string, true)) {
-            xml_parser_free($xmlParser);
-            return false;
-        }
-        return true;
+        $ok        = xml_parse($xmlParser, $string, true);
+        //无论成败都释放:Swoole 常驻 worker 无请求级资源回收,success 路径不释放会逐次泄漏 xml-parser 句柄。
+        xml_parser_free($xmlParser);
+        return (bool) $ok;
     }
 
     /**

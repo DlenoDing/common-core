@@ -25,7 +25,9 @@ class Client
                     if (!empty($forwarded)) {
                         $ips = explode(',', $forwarded);
                         for ($i = 0; $i < count($ips); $i++) {
-                            $ip = $ips[$i];
+                            //XFF 惯例为 "client, proxy1, proxy2"(逗号后带空格);必须 trim,
+                            //否则 filter_var(FILTER_VALIDATE_IP) 对 " 8.8.8.8" 判 false → 漏掉真实公网客户端 IP、退回 Remote_Addr。
+                            $ip = trim($ips[$i]);
                             if (self::checkIp($ip)) {//排除局域网ip
                                 break;
                             }

@@ -85,12 +85,13 @@ class WsKeys
      */
     public static function presenceKey(string $dim, $value): string
     {
-        $bucket = (int) (crc32((string) $value) % self::presenceBucketCount());
+        //& 0x7fffffff:保证非负(32 位 PHP 下 crc32 可能返回负数→负桶号、全量枚举漏读;Swoole 虽恒 64 位,仍作防御)
+        $bucket = (int) ((crc32((string) $value) & 0x7fffffff) % self::presenceBucketCount());
         return self::presenceBucketKey($dim, $bucket);
     }
 
     /**
-     * presence 的 bucket 总数(config('websocket.presence_bucket_num'),默认 256,≤0 回退默认)。
+     * presence 的 bucket 总数(config('websocket.presence_bucket_num'),默认 4,≤0 回退默认)。
      * 写/读/全量枚举三处共用,保证 bucket 编号一致(中途改值会让旧桶的值漏读,需在无流量窗口改)。
      */
     public static function presenceBucketCount(): int

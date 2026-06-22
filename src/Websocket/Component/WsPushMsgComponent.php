@@ -283,7 +283,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      * 仅 presence 索引(bucket 化)使这成为可能:遍历 N=presence_bucket_num 个【已知 bucket key】(非 keyspace SCAN、集群安全),
      * 各 bucket HGETALL → 汇总 value→server 集合,任一 server 在线即在线。只返回在线值(value=>true)。
      *
-     * 成本:N 次 HGETALL(默认 256,config 可调;并发重叠)——无论在线值多少都遍历全部 bucket,故适合"偶尔取全量在线快照"
+     * 成本:N 次 HGETALL(默认 4,config 可调;并发重叠)——无论在线值多少都遍历全部 bucket,故适合"偶尔取全量在线快照"
      * (如后台/统计),不适合高频热路径。返回体 O(M)(M=该维度在线值数)。
      * 精度同心跳级:刚断连的值最多 ≤BIND_CACHE_TIME 内仍可能在列(presence TTL 滞留)。
      * 限制:仅对 addressableDimensions() 维度有 presence;presence_bucket_num 中途改值会漏读旧桶,改值需在无流量窗口。

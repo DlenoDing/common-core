@@ -402,6 +402,11 @@ class BaseModel extends Model
                        );
         $tableName = $tableName[0] ?? null;
         $tableName = $tableName['TABLE_NAME'] ?? null;
+        //information_schema 返回的是物理表名(含连接前缀);剥掉前缀返回逻辑名——否则 setTable() 拿到带前缀名、
+        //grammar 再加一次前缀 → 双前缀、表不存在(DB 前缀为空时不可见,故此前 e2e 未暴露)。
+        if ($tableName !== null && !empty($prefix) && str_starts_with($tableName, $prefix)) {
+            $tableName = substr($tableName, strlen($prefix));
+        }
         return $tableName;
     }
 
