@@ -196,11 +196,20 @@ class WsPushMsgComponent extends BaseCoreComponent
     /**
      * 【心跳级】在线判断:仅凭绑定反向索引 getDimBind 的新鲜度——某维度值名下存在「绑定项 + 其 server 仍在线」即视为在线。
      * 精度为心跳/TTL 粒度(Redis7.4+ HEXPIRE 自动剔除过期 field;心跳每 <idle_time 续期,刚断未过期的连接最多
-     * ≤BIND_CACHE_TIME 秒内仍判在线),但极廉价:每值仅 1 次 HGETALL,无 job/轮询/2s 尾,适合**大批量/全量** presence。
+     * ≤BIND_CACHE_TIME 秒内仍判在线),但极廉价:每值仅 1 次 HGETALL,无 job/轮询/2s 尾。
      * 与 pushToDimMessage 同一套绑定真相:此处判"在线" ≈ "现在推一条消息会有去处"。
      * 对任意维度(unique 或多连接)均可用;顺带清理 server 已下线的陈旧绑定项。
+     *
+     * 【取值约定 / 如何"查全量"】$values 必须是**调用方显式列出的、要查询的维度值清单**。
+     * 本方法没有"全量"哨兵参数,也不会自动发现"该维度下所有已绑定的值"——
+     * 所谓"适合全量"指的是它**无批量上限/无 job/无 2s 尾**(这正是它相对 checkRealtimeOnlineByDim 的用途),
+     * 故"查全量"的做法就是:**把你关心的全部维度值都放进 $values 一次传进来**(完整清单也能直接传)。
+     * 注:真要"枚举该维度当前所有已绑定的值",需 SCAN `<prefix>bind:<dim>:*` 键空间(集群跨节点、开销大),
+     * 本方法不内置;如确需,自行枚举出值再传入。
+     *
+     * 成本:N 个值 = N 次 HGETALL(每值一个独立 hash key,集群下分散各 slot),内部按 $concurrent 并发重叠 RTT。
      * @param string $dim    维度名
-     * @param array  $values 维度值列表(可大批量;内部按 $concurrent 并发,各值一次 HGETALL 重叠 RTT)
+     * @param array  $values 要查询的维度值清单(显式列出,无"全量"哨兵;大批量/完整清单均可)
      * @return array value => bool
      */
     public function checkHeartbeatOnlineByDim(string $dim, array $values, int $concurrent = 100)
