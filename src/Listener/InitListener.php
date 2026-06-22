@@ -38,6 +38,7 @@ class InitListener implements ListenerInterface
      */
     public function process(object $event): void
     {
-        date_default_timezone_set(config('app.default_time_zone', 'Asia/Shanghai'));
+        //未配置 app.default_time_zone 时默认 UTC,与 Http/Rpc 两版 InitMiddleware 一致(原默认 Asia/Shanghai 与之割裂)
+        date_default_timezone_set((string) config('app.default_time_zone', 'UTC'));
     }
 }

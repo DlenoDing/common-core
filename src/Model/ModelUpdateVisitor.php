@@ -71,6 +71,12 @@ class ModelUpdateVisitor extends Visitor
             $cast = $this->formatDatabaseType($type) ?? 'string';
         }
 
+        //PHP 原生枚举 cast(如 casts=['status'=>StatusEnum::class])→ @property 用 FQCN(带前导 \),与 Hyperf 原版一致;
+        //本覆盖版 fork 时漏了此分支,会让枚举 cast 列的 docblock 类型变成裸类名(仅影响 IDE 提示)。
+        if (enum_exists($cast)) {
+            return '\\' . $cast;
+        }
+
         switch ($cast) {
             case 'integer':
                 return 'int';

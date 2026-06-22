@@ -40,8 +40,14 @@ class RpcOutLog
                         'Exception'
                     ) !== false && $proceedingJoinPoint->methodName == 'handle'
                 ) {
-                    $mca     = Server::getRouteMca();
-                    $service = join('\\', $mca['module']) . '\\' . $mca['ctrl'] . '->' . $mca['action'];
+                    $mca = Server::getRouteMca();
+                    //无请求上下文时 getRouteMca() 返回 []，直接索引 $mca['module'] 会 Undefined key + join(null) TypeError；
+                    //对齐 ErrorOutLog 加守卫，空时回落 className->methodName。
+                    if (!empty($mca['module'])) {
+                        $service = join('\\', $mca['module']) . '\\' . $mca['ctrl'] . '->' . $mca['action'];
+                    } else {
+                        $service = $proceedingJoinPoint->className . '->' . $proceedingJoinPoint->methodName;
+                    }
                 } else {
                     $service = $proceedingJoinPoint->className . '->' . $proceedingJoinPoint->methodName;
                 }

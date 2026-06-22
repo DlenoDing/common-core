@@ -51,8 +51,17 @@ abstract class BaseParams
             $underLineName = $this->capitalToUnderline($property->getName());
             $capitalName   = $this->underlineToCapital($property->getName());
             $setMethod     = 'set' . $capitalName;
-            $value         = $data[$underLineName] ?? ($data[lcfirst($capitalName)] ?? false);
-            if ($value !== false && $value !== '' && $reflectionParams->hasMethod($setMethod)) {
+            //用 array_key_exists 判「字段是否传入」,而非拿 false 当缺失哨兵——否则调用方真传 bool false 会被当成"未传"丢弃。
+            //下划线键优先,其次小驼峰键。空串仍跳过(与 toArray 对空串的省略约定一致;如需可单独放开)。
+            $lcKey = lcfirst($capitalName);
+            if (array_key_exists($underLineName, $data)) {
+                $value = $data[$underLineName];
+            } elseif (array_key_exists($lcKey, $data)) {
+                $value = $data[$lcKey];
+            } else {
+                continue;
+            }
+            if ($value !== '' && $reflectionParams->hasMethod($setMethod)) {
                 $this->$setMethod($value);
             }
         }
