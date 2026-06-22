@@ -66,6 +66,8 @@ class WsTokenComponent extends BaseCoreComponent
                 $this->redis->hSet($dimKey, $serverFdStr, array_to_json($serverFd));
                 //过期时间与用户数据缓存一致：HEXPIRE 每 field 独立 TTL(死连接 field 到期自洁)
                 $this->expireDimTtl($dimKey, $serverFdStr);
+                //同步心跳 presence 索引(从反向索引重算该值的在线 server 集合)
+                $this->setPresence($dim, $dims[$dim]);
             }
 
             //单连接维度(uniqueDimensions):同维度值已有别的连接 → 踢旧(后登录踢前登录)。
@@ -145,6 +147,8 @@ class WsTokenComponent extends BaseCoreComponent
                     continue;
                 }
                 $this->expireDimTtl(WsKeys::bindDimKey($dim, $dims[$dim]), $serverFdStr);
+                //续期心跳 presence(只 HEXPIRE;field 缺失则懒重建)——server 集合未变,无需重写 value
+                $this->refreshPresence($dim, $dims[$dim]);
             }
         }
     }
@@ -156,9 +160,72 @@ class WsTokenComponent extends BaseCoreComponent
      */
     private function expireDimTtl(string $dimKey, string $field): void
     {
-        //rawCommand 不走 OPT_PREFIX,手动补全前缀(phpredis 部分版本无 hExpire() 方法,统一 rawCommand)
-        $full = (string) $this->redis->getOption(\Redis::OPT_PREFIX) . $dimKey;
-        $this->redis->rawCommand('HEXPIRE', $full, WsKeys::BIND_CACHE_TIME, 'FIELDS', 1, $field);
+        $this->hExpireField($dimKey, $field);
+    }
+
+    /**
+     * 对 hash 的单个 field 设 BIND_CACHE_TIME 的 HEXPIRE(7.4+)。
+     * rawCommand 不走 OPT_PREFIX,手动补全前缀(phpredis 部分版本无 hExpire() 方法,统一 rawCommand)。
+     * @return mixed rawCommand 结果(数组,如 [1] 已设/[-2] 无此 field)
+     */
+    private function hExpireField(string $key, string $field)
+    {
+        $full = (string) $this->redis->getOption(\Redis::OPT_PREFIX) . $key;
+        return $this->redis->rawCommand('HEXPIRE', $full, WsKeys::BIND_CACHE_TIME, 'FIELDS', 1, $field);
+    }
+
+    //——— 心跳 presence 索引(ws:online:<dim>:<bucket>,field=value→json([sv,...]))———
+    //写时从反向索引派生该值当前所在的在线 server 集合;读(checkHeartbeatOnlineByDim)按 bucket 批量 HMGET。
+    //语义(codex 校验):unBind 不删 presence(交 field TTL 过期,避免跨 key 竞态误删活跃连接);
+    //refreshBind 只 HEXPIRE 续命,field 不存在(被竞态删/过期但连接仍活)则懒重建一次。
+
+    /**
+     * 从反向索引 HKEYS 派生该维度值当前所在的【在线 server 集合】(field=sv:fd → 取 sv,去重)。
+     * @return string[] sv 列表(可能为空=该值当前无任何绑定)
+     */
+    private function deriveValueServers(string $dim, $value): array
+    {
+        $fields = $this->redis->hKeys(WsKeys::bindDimKey($dim, $value));
+        if (!is_array($fields)) {
+            return [];
+        }
+        $svs = [];
+        foreach ($fields as $field) {
+            //field = sv:fd;serverKey 可能含冒号(IPv6/自定义),用最后一个冒号拆,sv 取前段
+            $pos = strrpos((string) $field, ':');
+            if ($pos === false) {
+                continue;
+            }
+            $sv = substr((string) $field, 0, $pos);
+            $svs[$sv] = $sv;//去重
+        }
+        return array_values($svs);
+    }
+
+    /**
+     * 重算并写 presence:从反向索引派生 server 集合 → HSET 该 value 的 field + HEXPIRE。
+     * 无任何绑定(派生为空)则不写(让旧 field 随 TTL 过期),不主动 HDEL。
+     */
+    private function setPresence(string $dim, $value): void
+    {
+        $svs = $this->deriveValueServers($dim, $value);
+        if (empty($svs)) {
+            return;
+        }
+        $pKey = WsKeys::presenceKey($dim, $value);
+        $this->redis->hSet($pKey, (string) $value, array_to_json($svs));
+        $this->hExpireField($pKey, (string) $value);
+    }
+
+    /**
+     * 续期 presence field;若 field 不存在(HEXPIRE 返回 -2:被跨 key 竞态误删/过期但连接仍活)→ 懒重建一次。
+     */
+    private function refreshPresence(string $dim, $value): void
+    {
+        $ret = $this->hExpireField(WsKeys::presenceKey($dim, $value), (string) $value);
+        if (!is_array($ret) || ((int) ($ret[0] ?? -2)) === -2) {
+            $this->setPresence($dim, $value);
+        }
     }
 
     /**

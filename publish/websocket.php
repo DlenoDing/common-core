@@ -25,6 +25,11 @@ return [
     // 避免每次都 HGETALL server:list。≤0 关闭缓存=每次取最新;默认 1000ms(注册有效期 30s 级,1s 量级缓存不影响正确性)。
     'server_set_cache_ms' => (int) env('WS_SERVER_SET_CACHE_MS', 1000),
 
+    // 心跳 presence 索引(checkHeartbeatOnlineByDim 读的 ws:online:<dim>:<bucket>)的 bucket 数。
+    // 分桶把"按值散落"的在线判断收敛成"按 bucket 批量 HMGET",并避免单 key/单 slot 热点。默认 256;
+    // 账号量很大可调大(单桶更小、单次大批量查询的 HMGET 次数上限随之上升),≤0 回退默认。
+    'presence_bucket_num' => (int) env('WS_PRESENCE_BUCKET_NUM', 256),
+
     // 实时 socket 级在线核验(checkRealtimeOnlineByDim)调优。
     'realtime_online' => [
         // 单次批量上限(禁全量/超大批量);超限抛异常,大批量在线请改用 checkHeartbeatOnlineByDim。下限 1。

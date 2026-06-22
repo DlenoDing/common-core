@@ -25,7 +25,7 @@ use function Hyperf\Support\env;
  * - send/close：本机 Sender 直推/断连（压缩开关读 env，无法走配置中心）
  * - pushPubMessage：广播；pushToDimMessage：按业务维度(WsBindStrategy)反向索引定向，分发 PushMessageJob 到各 server 的 per-IP 队列
  * - checkRealtimeOnlineByDim：实时 socket 级核验（仅 uniqueDimensions 单连接维度、批量有上限、禁全量）——派 CheckOnlineJob 到目标 server 队列 + 轮询 check key 聚合
- * - checkHeartbeatOnlineByDim：心跳级在线判断（仅凭绑定反向索引 getDimBind 的新鲜度，廉价、可大批量；精度为心跳/TTL 粒度，与 pushToDimMessage 同一套绑定真相）
+ * - checkHeartbeatOnlineByDim：心跳级在线判断（读 presence 索引 ws:online:<dim>:<bucket>，按 bucket 批量 HMGET，廉价、适合大批量；精度为心跳/TTL 粒度；presence 由绑定写路径维护）
  * - closeClient：派 CloseMessageJob
  *
  * 维度名(account_id / device …)一律由调用方(业务)传入，本组件不绑定任何具体维度。
@@ -206,21 +206,18 @@ class WsPushMsgComponent extends BaseCoreComponent
     }
 
     /**
-     * 【心跳级】在线判断:仅凭绑定反向索引 getDimBind 的新鲜度——某维度值名下存在「绑定项 + 其 server 仍在线」即视为在线。
-     * 精度为心跳/TTL 粒度(Redis7.4+ HEXPIRE 自动剔除过期 field;心跳每 <idle_time 续期,刚断未过期的连接最多
-     * ≤BIND_CACHE_TIME 秒内仍判在线),但极廉价:每值仅 1 次 HKEYS,无 job/轮询/2s 尾。
-     * 与 pushToDimMessage 同一套绑定真相:此处判"在线" ≈ "现在推一条消息会有去处"。
-     * 对任意维度(unique 或多连接)均可用;顺带清理 server 已下线的陈旧绑定项。
+     * 【心跳级】在线判断:读 presence 索引(ws:online:<dim>:<bucket>,field=value→json([sv,...]))——
+     * 某维度值名下存在「在线 server」即视为在线。presence 由绑定写路径(setBind/refreshBind)从反向索引派生维护、
+     * 带 field 级 HEXPIRE(BIND_CACHE_TIME)自洁;此处只读、纯批量。
+     * 精度为心跳/TTL 粒度:刚断的连接最多 ≤BIND_CACHE_TIME 秒内仍可能判在线(干净断连也走 TTL,见 WsTokenComponent presence 语义)。
+     *
+     * 性能:values 按 bucket 分组,每个 bucket 一次 HMGET(单 key,集群安全),N 个值 → 至多 min(bucket数, N) 次 HMGET,
+     * 不再每值一次 HKEYS;HMGET 之间按 $concurrent 并发重叠 RTT。"server 下线即排除"靠读时与 getServerSetCached() 取交集保住。
      *
      * 【取值约定 / 如何"查全量"】$values 必须是**调用方显式列出的、要查询的维度值清单**。
-     * 本方法没有"全量"哨兵参数,也不会自动发现"该维度下所有已绑定的值"——
-     * 所谓"适合全量"指的是它**无批量上限/无 job/无 2s 尾**(这正是它相对 checkRealtimeOnlineByDim 的用途),
-     * 故"查全量"的做法就是:**把你关心的全部维度值都放进 $values 一次传进来**(完整清单也能直接传)。
-     * 注:真要"枚举该维度当前所有已绑定的值",需 SCAN `<prefix>bind:<dim>:*` 键空间(集群跨节点、开销大),
-     * 本方法不内置;如确需,自行枚举出值再传入。
-     *
-     * 成本:N 个值 = N 次 HKEYS(每值一个独立 hash key,集群下分散各 slot),内部按 $concurrent 并发重叠 RTT。
-     * @param string $dim    维度名
+     * 本方法没有"全量"哨兵,也不自动发现"该维度下所有已绑定的值"——把你关心的全部值一次传进来即可(完整清单也行)。
+     * 真要枚举某维度当前所有在线值,需 SCAN `<prefix>online:<dim>:*` 键空间(集群跨节点、开销大),本方法不内置。
+     * @param string $dim    维度名(须在 WsBindStrategy::addressableDimensions() 内,presence 才有维护)
      * @param array  $values 要查询的维度值清单(显式列出,无"全量"哨兵;大批量/完整清单均可)
      * @return array value => bool
      */
@@ -231,39 +228,53 @@ class WsPushMsgComponent extends BaseCoreComponent
             return [];
         }
         $wssCpt    = get_inject_obj(WsServerComponent::class);
-        $wstkCpt   = get_inject_obj(WsTokenComponent::class);
         $serverSet = $wssCpt->getServerSetCached();//在线服务器集合(进程级短缓存,O(1) isset 查找)
-        $parallel  = new Parallel($concurrent);
+        $redis     = $this->redis;
+
+        $result = array_fill_keys($values, false);
+
+        //按 bucket 分组:同 bucket 的多个 value 一次 HMGET 取回(field=value)
+        $byBucket = [];//bucketKey => [ (string)value => value ]
         foreach ($values as $value) {
+            $byBucket[WsKeys::presenceKey($dim, $value)][(string) $value] = $value;
+        }
+
+        //每 bucket 一次 HMGET(并发重叠);解析 server 集合,任一 sv 在线即在线
+        $parallel = new Parallel($concurrent);
+        foreach ($byBucket as $bucketKey => $vals) {
             $parallel->add(
-                function () use ($wstkCpt, $serverSet, $dim, $value) {
-                    //只取 field(sv:fd)(HKEYS),无需读/decode 整份 JSON value
-                    $fields = $wstkCpt->getDimBindFields($dim, $value);
-                    if (empty($fields)) {
-                        return false;
-                    }
-                    $stale = [];
-                    foreach ($fields as $field) {
-                        //field = sv:fd;serverKey 可能含冒号(IPv6/自定义),用最后一个冒号拆,sv 取前段
-                        $pos = strrpos((string) $field, ':');
-                        if ($pos === false) {
-                            continue;
+                function () use ($redis, $bucketKey, $vals, $serverSet) {
+                    $raw = $redis->hMGet($bucketKey, array_keys($vals));//[ (string)value => json|false ]
+                    $out = [];//value => bool
+                    foreach ($vals as $sval => $value) {
+                        $json   = $raw[$sval] ?? false;
+                        $online = false;
+                        if (is_string($json) && $json !== '') {
+                            $svs = json_to_array($json);
+                            if (is_array($svs)) {
+                                foreach ($svs as $sv) {
+                                    if (isset($serverSet[$sv])) {
+                                        $online = true;//任一所在 server 仍在线 → 在线
+                                        break;
+                                    }
+                                }
+                            }
                         }
-                        if (isset($serverSet[substr($field, 0, $pos)])) {
-                            return true;//任一新鲜绑定落在在线 server 上 → 判在线(短路,纯读不写)
-                        }
-                        $stale[] = $field;//所属 server 已下线 → 收集待批量清理
+                        $out[$value] = $online;
                     }
-                    //仅"全员离线"才会走到这:同 value 失效项一次性 HDEL(在线短路路径不触发写)
-                    if (!empty($stale)) {
-                        $wstkCpt->delDimBindFields($dim, $value, $stale);
-                    }
-                    return false;
+                    return $out;
                 },
-                $value
+                $bucketKey
             );
         }
-        return $parallel->wait(false);
+        foreach ($parallel->wait(false) as $out) {
+            if (is_array($out)) {
+                foreach ($out as $v => $b) {
+                    $result[$v] = $b;
+                }
+            }
+        }
+        return $result;
     }
 
     /**
