@@ -301,12 +301,6 @@ if (!function_exists('rpc_service_get')) {
     function rpc_service_get($service)
     {
         return get_inject_obj($service);
-        /*$key = 'SERVICE_CLIENT::' . $service;
-        if (!Context::has($key)) {
-            $client = new \Dleno\CommonCore\JsonRpc\RpcClient($service);
-            Context::set($key, $client);
-        }
-        return Context::get($key);*/
     }
 }
 
