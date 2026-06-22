@@ -8,20 +8,22 @@ use Dleno\CommonCore\Base\AsyncQueue\BaseJob;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Websocket\Broadcast\CheckFd;
 use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\WsKeys;
 use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 use Dleno\CommonCore\Websocket\Component\WsServerComponent;
 use Hyperf\Redis\Redis;
 
 /**
  * 在线检查 Job（WS 在线判定）。
- * 在目标 server 队列内对 fd 批量核验（CheckFd 三态 true/false/null，null 不写、交超时重试），
- * 命中结果写 ws:check:online:<sv>:<fd>（TTL 5s），由 WsPushMsgComponent::checkRealtimeOnlineByDim 轮询聚合。
+ * 在目标 server 队列内对 fd 批量核验（CheckFd 三态 true/false/null，null 不写、交就绪信号+超时兜底），
+ * 结果一次性 hMSet 进 ws:check:online:<rid>:<sv>（field=fd，TTL 5s），核验完再 rPush <sv> 到就绪信号
+ * ws:check:ready:<rid>，由 WsPushMsgComponent::checkRealtimeOnlineByDim 的 BLPOP 即时唤醒聚合。
  */
 class CheckOnlineJob extends BaseJob
 {
-    //接收参数（可自定义其他或者多个）
+    //接收参数(待核验的 fd 列表)
     /**
-     * @var int
+     * @var int[]|int
      */
     private $fds;
 
@@ -46,54 +48,47 @@ class CheckOnlineJob extends BaseJob
         $serverKey = $wssCpt->getServerKey();
         $redis     = get_inject_obj(Redis::class);
 
-        if ($this->fds === '-1' || $this->fds === -1) {
-            //检查当前服务器的所有人:先汇总全部记录的客户端,再一次批量核验
-            $all    = [];
-            //按游标遍历直到 cursor 归 0:不能以「本批为空」为终止——getClients 过滤过期连接 + phpredis 默认
-            //SCAN_NORETRY 空批,都可能在游标未尽时返回空,以空批终止会漏核验连接、致全量在线统计偏少。
-            $cursor = null;
-            do {
-                $clients = $wssCpt->getClients($cursor, 100);
-                foreach ($clients as $fd) {
-                    $all[] = (int)$fd;
-                }
-            } while ((int) $cursor !== 0);
-            $this->checkAndSet($redis, $serverKey, $all);
-        } else {
-            $fds = is_array($this->fds) ? $this->fds : [$this->fds];
-            $this->checkAndSet($redis, $serverKey, $fds);
+        //仅核验指定 fd(实时在线检查已限 unique 维度 + 禁全量;原 fds=-1 全量枚举本机所有连接的路已移除)
+        $fds = is_array($this->fds) ? $this->fds : [$this->fds];
+        $this->checkAndSet($redis, $serverKey, $fds);
+
+        //通知请求方:本服务器已核验完(无论有无在线 fd),让其 BLPOP 即时唤醒,不必干等超时
+        if ($this->rid !== '') {
+            $readyKey = WsKeys::checkReadyKey($this->rid);
+            $redis->rPush($readyKey, $serverKey);
+            $redis->expire($readyKey, 10);
         }
 
         return true;
     }
 
     /**
-     * 一次批量检查并写回结果(内部按 CHUNK 分轮、全员应答)。
+     * 一次批量检查并把结果一次性 hMSet 写回(CheckFd 内部按 CHUNK 分轮、全员应答)。
      * @param int[] $fds
      */
     private function checkAndSet(Redis $redis, $serverKey, array $fds): void
     {
-        if (empty($fds)) {
+        if (empty($fds) || $this->rid === '') {
             return;
         }
         try {
             $result = CheckFd::check($fds);//[fd => true|false|null]
+            $pairs  = [];//fd => '1'/'0'
             foreach ($result as $fd => $online) {
                 if ($online === null) {
-                    continue;//未知状态(超时未收齐):不写明确结果,交由上层超时/重试,避免误判离线
+                    continue;//未知状态(超时未收齐):不写明确结果——就绪信号已保证请求方不会干等,缺失项按离线/重试处理
                 }
-                $this->setOnline($redis, $serverKey, $fd, $online);
+                $pairs[(string) $fd] = $online ? '1' : '0';
+            }
+            if (!empty($pairs)) {
+                $key = WsKeys::checkResultKey($this->rid, $serverKey);//HASH: field=fd
+                $redis->hMSet($key, $pairs);//一次批量写,代替逐 fd set
+                $redis->expire($key, 5);
             }
         } catch (\Throwable $e) {
             Logger::businessLog('CHECK-FD')
                   ->info(array_to_json(['msg' => $e->getMessage()]));
         }
-    }
-
-    private function setOnline(Redis $redis, $serverKey, $fd, $online)
-    {
-        $checkKey = WsPushMsgComponent::getCheckKey($this->rid, $serverKey, $fd);
-        $redis->set($checkKey, strval($online ? 1 : 0), 5);
     }
 
     public function getQueue()

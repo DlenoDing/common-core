@@ -29,7 +29,8 @@ class WsKeys
     const SUFFIX_BIND_SFD    = 'bind:sfd:';          // serverFd 主绑定
     const SUFFIX_BIND_DIM    = 'bind:';              // 维度反向索引前缀（dim=account_id 时即 ...bind:account_id:）
     const SUFFIX_QUEUE       = 'queue:message:';     // per-server 实时消息队列
-    const SUFFIX_CHECK       = 'check:online:';      // 在线检查结果
+    const SUFFIX_CHECK       = 'check:online:';      // 在线检查结果(HASH: <rid>:<sv> → field=fd)
+    const SUFFIX_CHECK_READY = 'check:ready:';       // 在线检查就绪信号(LIST: <rid> → 各服务器核验完 rPush 其 sv)
 
     //时长（秒）：服务器注册有效期基数 / 绑定缓存时长
     const SERVER_REG_LIMIT = 30;                     // 服务器注册频率/有效期基数
@@ -99,11 +100,20 @@ class WsKeys
     }
 
     /**
-     * 在线检查结果 key。含 $rid(每次 checkRealtimeOnlineByDim 调用唯一)做请求隔离:
-     * 并发检查同一 (sv,fd) 也互不覆盖/误删。形如 <prefix>check:online:<rid>:<sv>:<fd>。
+     * 在线检查结果 HASH key:<prefix>check:online:<rid>:<sv>(field=fd,value '1'/'0')。
+     * 含 $rid(每值唯一)做请求隔离——并发检查同一 (sv,fd) 互不覆盖;同一服务器一批 fd 的结果聚成一个 hash(批量存取)。
      */
-    public static function checkKey(string $rid, string $serverKey, $fd): string
+    public static function checkResultKey(string $rid, string $serverKey): string
     {
-        return self::prefix() . self::SUFFIX_CHECK . $rid . ':' . $serverKey . ':' . $fd;
+        return self::prefix() . self::SUFFIX_CHECK . $rid . ':' . $serverKey;
+    }
+
+    /**
+     * 在线检查就绪信号 LIST key:<prefix>check:ready:<rid>。消费方核验完某服务器即 rPush 其 sv,
+     * 请求方 BLPOP 即时唤醒(替代 10ms 轮询);无信号时按超时兜底。
+     */
+    public static function checkReadyKey(string $rid): string
+    {
+        return self::prefix() . self::SUFFIX_CHECK_READY . $rid;
     }
 }

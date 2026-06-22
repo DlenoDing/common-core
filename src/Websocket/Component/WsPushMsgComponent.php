@@ -16,7 +16,6 @@ use Hyperf\Di\Annotation\Inject;
 use Hyperf\Redis\Redis;
 use Hyperf\WebSocketServer\Sender;
 
-use function Hyperf\Coroutine\wait;
 use function Hyperf\Support\env;
 
 /**
@@ -71,8 +70,11 @@ class WsPushMsgComponent extends BaseCoreComponent
         $this->sender->disconnect(intval($fd));
     }
 
-    //实时核验批量上限:每值都要派 job + 轮询 check key + 可能等满 2s,代价高;限批量、禁全量/超大批量,防压垮单消费进程。可经 env 调。
+    //实时核验批量上限:每值都要派 job + 等结果,代价高;限批量、禁全量/超大批量,防压垮单消费进程。可经 env 调。
     private const REALTIME_ONLINE_MAX = 100;
+
+    //实时核验等待超时(秒):消费方写结果后 rPush 就绪信号、请求方 BLPOP 即时唤醒;此超时只在消费方未响应(队列积压/没跑)时兜底。可经 env 调。
+    private const REALTIME_ONLINE_TIMEOUT = 2;
 
     /**
      * 【实时 socket 级】在线核验:派 CheckOnlineJob 到目标 server 逐 fd 实时核验(getClientInfo)+ 轮询 check key 聚合。
@@ -104,75 +106,80 @@ class WsPushMsgComponent extends BaseCoreComponent
         $wssCpt   = get_inject_obj(WsServerComponent::class);
         $wstkCpt  = get_inject_obj(WsTokenComponent::class);
         $servers  = $wssCpt->getServerList();
-        //每次调用生成唯一 rid → check key 形如 ws:check:online:<rid>:<sv>:<fd>:
-        //并发的多个 checkRealtimeOnlineByDim 即便覆盖同一 (sv,fd),也各用自己 rid 的 key,互不抢结果/互不误删(#7 隔离)。
-        $rid      = bin2hex(random_bytes(8));
+        $timeout  = (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT);
+        $redis    = $this->redis;
         $parallel = new Parallel($concurrent);
         foreach ($values as $value) {
             $parallel->add(
-                function () use ($wstkCpt, $servers, $dim, $value, $rid) {
+                function () use ($wstkCpt, $servers, $dim, $value, $timeout, $redis) {
+                    //per-value rid:每值独立 rid → 结果 hash 与就绪信号都按 rid 隔离;跨 call、同 call 内跨 value 都互不抢(#7),
+                    //也让各值的 BLPOP 只收到自己的就绪信号。
+                    $rid        = bin2hex(random_bytes(8));
                     $valueBinds = $wstkCpt->getDimBind($dim, $value);
                     if (empty($valueBinds)) {
                         return false;
                     }
-                    //按服务器聚合该维度值的全部 fd(同一服务器的多连接合并为一个批量任务)
+                    //按服务器聚合该维度值的全部 fd(同一服务器多连接合并为一个批量任务)
                     $svFds = [];//sv => [fd, ...]
-                    $polls = [];//[ ['sv'=>, 'fd'=>], ... ]
                     foreach ($valueBinds as $field => $serverFdJson) {
                         $serverFd = json_to_array($serverFdJson);
                         $sv = $serverFd['sv'];
-                        $fd = $serverFd['fd'];
+                        $fd = (int) $serverFd['fd'];
                         if (!in_array($sv, $servers)) {
-                            $wstkCpt->delDimBind($dim, $value, $field);//对应服务器已无效,删除该连接项(field=sv:fd)
+                            $wstkCpt->delDimBind($dim, $value, $field);//对应服务器已无效,删除该连接项
                             continue;
                         }
                         $svFds[$sv][] = $fd;
-                        $polls[]      = ['sv' => $sv, 'fd' => $fd];
                     }
-                    if (empty($polls)) {
+                    if (empty($svFds)) {
                         return false;
                     }
-                    //rid 隔离下 check key 每次全新,无需再清陈旧。每个服务器一个批量任务(该用户在该服务器上的全部 fd),把 rid 下传给 Job
+                    //每服务器一个批量任务(该用户在该服务器上的全部 fd),rid 下传
                     foreach ($svFds as $sv => $fds) {
-                        $job = (new CheckOnlineJob($fds, $rid))->setQueue(self::getQueue($sv));
-                        AsyncQueue::push($job);
+                        AsyncQueue::push((new CheckOnlineJob($fds, $rid))->setQueue(self::getQueue($sv)));
                     }
-                    //轮询结果:任一 fd 在线即判该用户在线
+                    //等结果:消费方写完某服务器的结果 hash 后 rPush 其 sv 到就绪信号;这里 BLPOP 即时唤醒
+                    //(无 10ms 轮询/无 EXISTS 风暴),读该服务器结果 hash,任一 fd '1' 即在线(短路)。
+                    //BLPOP 用 1s 整秒分片 + 截止时间(不依赖 phpredis 浮点超时);消费方没响应才走超时兜底。
+                    $readyKey = WsKeys::checkReadyKey($rid);
+                    $pendingSv = $svFds;            // 待报告服务器集合(sv => fds)
+                    $online    = false;
                     try {
-                        return (bool)wait(function () use ($polls, $rid) {
-                            $pending = [];
-                            foreach ($polls as $p) {
-                                $pending[$p['sv'] . ':' . $p['fd']] = self::getCheckKey($rid, $p['sv'], $p['fd']);
+                        $deadline = microtime(true) + $timeout;
+                        while (!empty($pendingSv) && microtime(true) < $deadline) {
+                            $sig = $redis->blPop([$readyKey], 1);//协程下非阻塞;无信号则 1s 后返回空,复查截止
+                            if (empty($sig)) {
+                                continue;
                             }
-                            $i = 0;
-                            while (!empty($pending) && ($i++) < 500) {
-                                foreach ($pending as $id => $key) {
-                                    if ($this->redis->exists($key)) {
-                                        $val = $this->redis->get($key);
-                                        $this->redis->del($key);
-                                        unset($pending[$id]);
-                                        if ($val) {
-                                            return true;//命中在线('1' 真值,'0' 假值)
-                                        }
-                                    }
-                                }
-                                if (empty($pending)) {
-                                    break;//全部已读且无在线
-                                }
-                                \Swoole\Coroutine::sleep(0.01);//协程让出,不阻塞 Worker
+                            $sv = $sig[1];
+                            if (!isset($pendingSv[$sv])) {
+                                continue;
                             }
-                            return false;
-                        }, 2.0);
+                            $vals = $redis->hGetAll(WsKeys::checkResultKey($rid, $sv));
+                            foreach ($pendingSv[$sv] as $fd) {
+                                if (($vals[(string) $fd] ?? null) === '1') {
+                                    $online = true;
+                                    break 2;//任一 fd 在线即判在线
+                                }
+                            }
+                            unset($pendingSv[$sv]);//该服务器已报告且无在线 fd
+                        }
                     } catch (\Throwable $e) {
-                        return false;
+                        $online = false;
+                    } finally {
+                        //清理本 rid 的就绪信号与结果 hash(均另有 TTL 兜底)
+                        $redis->del($readyKey);
+                        foreach (array_keys($svFds) as $sv) {
+                            $redis->del(WsKeys::checkResultKey($rid, $sv));
+                        }
                     }
+                    return $online;
                 },
                 $value
             );
         }
 
-        $onlines = $parallel->wait(false);
-        return $onlines;
+        return $parallel->wait(false);
     }
 
     /**
@@ -213,11 +220,6 @@ class WsPushMsgComponent extends BaseCoreComponent
             );
         }
         return $parallel->wait(false);
-    }
-
-    public static function getCheckKey($rid, $serverKey, $fd)
-    {
-        return WsKeys::checkKey($rid, $serverKey, $fd);
     }
 
     /**
