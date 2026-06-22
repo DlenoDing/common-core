@@ -104,10 +104,13 @@ class WsPushMsgComponent extends BaseCoreComponent
         $wssCpt   = get_inject_obj(WsServerComponent::class);
         $wstkCpt  = get_inject_obj(WsTokenComponent::class);
         $servers  = $wssCpt->getServerList();
+        //每次调用生成唯一 rid → check key 形如 ws:check:online:<rid>:<sv>:<fd>:
+        //并发的多个 checkRealtimeOnlineByDim 即便覆盖同一 (sv,fd),也各用自己 rid 的 key,互不抢结果/互不误删(#7 隔离)。
+        $rid      = bin2hex(random_bytes(8));
         $parallel = new Parallel($concurrent);
         foreach ($values as $value) {
             $parallel->add(
-                function () use ($wstkCpt, $servers, $dim, $value) {
+                function () use ($wstkCpt, $servers, $dim, $value, $rid) {
                     $valueBinds = $wstkCpt->getDimBind($dim, $value);
                     if (empty($valueBinds)) {
                         return false;
@@ -129,21 +132,17 @@ class WsPushMsgComponent extends BaseCoreComponent
                     if (empty($polls)) {
                         return false;
                     }
-                    //先清除历史结果 key,避免上一次"提前命中即返回"残留的 stale 结果干扰本次判定
-                    foreach ($polls as $p) {
-                        $this->redis->del(self::getCheckKey($p['sv'], $p['fd']));
-                    }
-                    //每个服务器一个批量任务(该用户在该服务器上的全部 fd)
+                    //rid 隔离下 check key 每次全新,无需再清陈旧。每个服务器一个批量任务(该用户在该服务器上的全部 fd),把 rid 下传给 Job
                     foreach ($svFds as $sv => $fds) {
-                        $job = (new CheckOnlineJob($fds))->setQueue(self::getQueue($sv));
+                        $job = (new CheckOnlineJob($fds, $rid))->setQueue(self::getQueue($sv));
                         AsyncQueue::push($job);
                     }
                     //轮询结果:任一 fd 在线即判该用户在线
                     try {
-                        return (bool)wait(function () use ($polls) {
+                        return (bool)wait(function () use ($polls, $rid) {
                             $pending = [];
                             foreach ($polls as $p) {
-                                $pending[$p['sv'] . ':' . $p['fd']] = self::getCheckKey($p['sv'], $p['fd']);
+                                $pending[$p['sv'] . ':' . $p['fd']] = self::getCheckKey($rid, $p['sv'], $p['fd']);
                             }
                             $i = 0;
                             while (!empty($pending) && ($i++) < 500) {
@@ -216,9 +215,9 @@ class WsPushMsgComponent extends BaseCoreComponent
         return $parallel->wait(false);
     }
 
-    public static function getCheckKey($serverKey, $fd)
+    public static function getCheckKey($rid, $serverKey, $fd)
     {
-        return WsKeys::checkKey($serverKey, $fd);
+        return WsKeys::checkKey($rid, $serverKey, $fd);
     }
 
     /**

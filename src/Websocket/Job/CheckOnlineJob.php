@@ -25,9 +25,15 @@ class CheckOnlineJob extends BaseJob
      */
     private $fds;
 
-    public function __construct($fds)
+    /**
+     * @var string 请求隔离 rid(由 checkRealtimeOnlineByDim 生成下传),写结果 key 时带上,避免并发互相覆盖
+     */
+    private $rid;
+
+    public function __construct($fds, $rid = '')
     {
         $this->fds = $fds;
+        $this->rid = $rid;
     }
 
     /**
@@ -86,7 +92,7 @@ class CheckOnlineJob extends BaseJob
 
     private function setOnline(Redis $redis, $serverKey, $fd, $online)
     {
-        $checkKey = WsPushMsgComponent::getCheckKey($serverKey, $fd);
+        $checkKey = WsPushMsgComponent::getCheckKey($this->rid, $serverKey, $fd);
         $redis->set($checkKey, strval($online ? 1 : 0), 5);
     }
 

@@ -98,8 +98,12 @@ class WsKeys
         return [$c . ':waiting', $c . ':reserved', $c . ':delayed', $c . ':failed', $c . ':timeout'];
     }
 
-    public static function checkKey(string $serverKey, $fd): string
+    /**
+     * 在线检查结果 key。含 $rid(每次 checkRealtimeOnlineByDim 调用唯一)做请求隔离:
+     * 并发检查同一 (sv,fd) 也互不覆盖/误删。形如 <prefix>check:online:<rid>:<sv>:<fd>。
+     */
+    public static function checkKey(string $rid, string $serverKey, $fd): string
     {
-        return self::prefix() . self::SUFFIX_CHECK . $serverKey . ':' . $fd;
+        return self::prefix() . self::SUFFIX_CHECK . $rid . ':' . $serverKey . ':' . $fd;
     }
 }
