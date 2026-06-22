@@ -15,10 +15,9 @@ use Hyperf\Redis\Redis;
 
 /**
  * 在线检查 Job（WS 在线判定）。
- * 在目标 server 队列内对 fd 批量核验（CheckFd 三态 true/false/null，null 不写、交就绪信号+超时兜底），
- * 核验完把结果【直接随就绪信号带回】:RPUSH ws:check:ready:<rid> 一条 JSON {sv, pairs:{fd:'1'/'0'}}，
- * 由 WsPushMsgComponent::checkRealtimeOnlineByDim 的 BLPOP 即时取用,省去调用方 HGETALL result。
- * 过渡期仍双写 result hash ws:check:online:<rid>:<sv>（兼容旧版调用方回落），全量上线后可去掉。
+ * 在目标 server 队列内对 fd 批量核验（CheckFd 三态 true/false/null，null 不带回、交就绪信号+超时兜底），
+ * 核验完把结果【一次性随就绪信号带回】:Lua 原子 RPUSH ws:check:ready:<rid> 一条 JSON {sv, pairs:{fd:'1'/'0'}} + PEXPIRE，
+ * 由 WsPushMsgComponent::checkRealtimeOnlineByDim 的 BLPOP 即时取用。无 result hash 旁路。
  */
 class CheckOnlineJob extends BaseJob
 {
@@ -53,12 +52,10 @@ class CheckOnlineJob extends BaseJob
 
         //仅核验指定 fd(实时在线检查已限 unique 维度 + 禁全量;原 fds=-1 全量枚举本机所有连接的路已移除)
         $fds   = is_array($this->fds) ? $this->fds : [$this->fds];
-        $pairs = $this->checkAndSet($redis, $serverKey, $fds);
+        $pairs = $this->checkFds($fds);
 
-        //通知请求方:本服务器已核验完(无论有无在线 fd)。就绪信号【直接带结果 payload】{sv,pairs},
-        //新 caller 直接用、省一次 HGETALL result;并用 Lua 把 RPUSH+PEXPIRE 合一(原子,避免 crash 在两命令间
-        //留下无 TTL 的 ready key)。result hash 仍由 checkAndSet 写(双写过渡):滚动发布期旧 caller 仍可 HGETALL 回落,
-        //全量上线后再发一版去掉 hash 写与回落分支。
+        //核验结果【一次性随就绪信号返回】:Lua 原子 RPUSH {sv,pairs} + PEXPIRE,请求方 BLPOP 直接取用,无 result hash 旁路。
+        //(原子化避免 crash 在两命令间留下无 TTL 的 ready key;空 pairs 也照发→"本服务器已核验完但无明确在线 fd",请求方即时唤醒不干等)
         if ($this->rid !== '') {
             $payload  = array_to_json(['sv' => $serverKey, 'pairs' => (object) $pairs]);
             $readyKey = WsKeys::checkReadyKey($this->rid);
@@ -73,11 +70,11 @@ class CheckOnlineJob extends BaseJob
     }
 
     /**
-     * 一次批量检查并把结果一次性 hMSet 写回(CheckFd 内部按 CHUNK 分轮、全员应答),返回 fd=>'1'/'0' 供就绪 payload 直接带回。
+     * 一次批量核验(CheckFd 内部按 CHUNK 分轮、全员应答),返回 fd=>'1'/'0' 供就绪 payload 直接带回。
      * @param int[] $fds
      * @return array<string,string> fd => '1'/'0'(空=本服务器无明确在线/离线结果)
      */
-    private function checkAndSet(Redis $redis, $serverKey, array $fds): array
+    private function checkFds(array $fds): array
     {
         if (empty($fds) || $this->rid === '') {
             return [];
@@ -90,11 +87,6 @@ class CheckOnlineJob extends BaseJob
                     continue;//未知状态(超时未收齐):不写明确结果——就绪信号已保证请求方不会干等,缺失项按离线/重试处理
                 }
                 $pairs[(string) $fd] = $online ? '1' : '0';
-            }
-            if (!empty($pairs)) {
-                $key = WsKeys::checkResultKey($this->rid, $serverKey);//HASH: field=fd(双写过渡,兼容旧 caller)
-                $redis->hMSet($key, $pairs);//一次批量写,代替逐 fd set
-                $redis->expire($key, 5);
             }
         } catch (\Throwable $e) {
             Logger::businessLog('CHECK-FD')

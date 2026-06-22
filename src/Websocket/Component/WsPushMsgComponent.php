@@ -165,7 +165,7 @@ class WsPushMsgComponent extends BaseCoreComponent
             AsyncQueue::push((new CheckOnlineJob(array_values($fds), $rid))->setQueue(CheckOnlineJob::resolveQueue($sv)));
         }
 
-        //④ 等结果:消费方写完某服务器的结果 hash 后 rPush 其 sv 到就绪信号;这里 BLPOP 即时唤醒收齐各服务器结果。
+        //④ 等结果:消费方核验完某服务器后,把结果 {sv,pairs} 直接 rPush 到就绪信号;这里 BLPOP 即时唤醒并取用。
         //   BLPOP 用 1s 整秒分片 + 截止时间(不依赖 phpredis 浮点超时);消费方没响应才走超时兜底。
         $readyKey  = WsKeys::checkReadyKey($rid);
         $pendingSv = $svFds;        // 待报告服务器集合(sv => fds),收齐一台移除一台
@@ -177,34 +177,19 @@ class WsPushMsgComponent extends BaseCoreComponent
                 if (empty($sig)) {
                     continue;
                 }
-                //ready list 元素双解析(滚动发布混版兼容):
-                //  新 worker = JSON {sv, pairs}(结果直接随就绪信号带回,省 HGETALL);
-                //  旧 worker = 纯 sv 字符串(结果仍在 result hash)→ 回落 HGETALL。
-                $elem    = $sig[1];
-                $decoded = json_to_array($elem);
-                if (is_array($decoded) && isset($decoded['sv'])) {
-                    $sv = (string) $decoded['sv'];
-                    if (!isset($pendingSv[$sv])) {
-                        continue;//非本批/重复信号
-                    }
-                    $fdOnline[$sv] = (isset($decoded['pairs']) && is_array($decoded['pairs'])) ? $decoded['pairs'] : [];
-                } else {
-                    $sv = (string) $elem;
-                    if (!isset($pendingSv[$sv])) {
-                        continue;
-                    }
-                    $fdOnline[$sv] = $redis->hGetAll(WsKeys::checkResultKey($rid, $sv));
+                //就绪信号直接带结果:JSON {sv, pairs:{fd:'1'/'0'}}(CheckOnlineJob 一次性塞回,无 result hash 旁路)
+                $decoded = json_to_array($sig[1]);
+                $sv      = (string) ($decoded['sv'] ?? '');
+                if ($sv === '' || !isset($pendingSv[$sv])) {
+                    continue;//非本批/重复/坏信号
                 }
+                $fdOnline[$sv] = (isset($decoded['pairs']) && is_array($decoded['pairs'])) ? $decoded['pairs'] : [];
                 unset($pendingSv[$sv]);//该服务器已收齐
             }
         } catch (\Throwable $e) {
             //出错则按已收集到的部分结果归集,未收齐的值保持 false(超时兜底语义一致)
         } finally {
-            //清理本 rid 的就绪信号与结果 hash(均另有 TTL 兜底)
-            $redis->del($readyKey);
-            foreach (array_keys($svFds) as $sv) {
-                $redis->del(WsKeys::checkResultKey($rid, $sv));
-            }
+            $redis->del($readyKey);//只清就绪信号(无 result hash 需清,ready key 另有 TTL 兜底)
         }
 
         //⑤ 按值归集:该值名下任意 (sv,fd) 实时在线即判在线
