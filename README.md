@@ -95,6 +95,7 @@ return [
 - `checkParams()` 参数校验。
 - `LockCheckTrait` 提供分布式锁辅助。
 - `OutputHtml`、`OutputNoLog`、`OutputNotFormat` 等注解控制输出格式、日志和字段格式化。
+- HTTP 输出切面自动记录响应日志，并在 `API_DATA_CRYPT` 开启时加密响应体。
 - HTTP 请求初始化、语言/时区/traceId 等上下文处理。
 - 路由分发增强和请求对象替换。
 
@@ -118,6 +119,7 @@ return [
 - HTTP/RPC 常用异常处理器。
 - 统一 JSON 输出。
 - API/RPC/Error 输出日志封装。
+- HTTP/WS Controller 响应日志切面。
 - 按渠道输出 stdout、system、api、sql、business 日志。
 
 ### Model 与数据库

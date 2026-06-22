@@ -12,18 +12,28 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore;
 
+use Dleno\HyperfEnvMulti\EnvLoader;
+use Hyperf\AsyncQueue\Listener\ReloadChannelListener;
+use Hyperf\Command\Listener\FailToHandleListener;
 use Hyperf\JsonRpc\JsonRpcPoolTransporter;
 use Hyperf\JsonRpc\JsonRpcTransporter;
+use Hyperf\Crontab\Process\CrontabDispatcherProcess;
+use Hyperf\ExceptionHandler\Listener\ErrorExceptionHandler;
 use Hyperf\Serializer\Serializer;
 use Hyperf\Serializer\SerializerFactory;
 use Hyperf\Coroutine\Coroutine;
 use Hyperf\Contract\NormalizerInterface;
+use Hyperf\HttpServer\CoreMiddleware;
+use Hyperf\HttpServer\Router\DispatcherFactory;
 use Hyperf\Database\Commands\Ast\ModelUpdateVisitor as AstModelUpdateVisitor;
 use Dleno\CommonCore\Model\ModelUpdateVisitor;
+use Dleno\CommonCore\Signal\ProcessStopHandler;
 use Dleno\CommonCore\Websocket\Contract\WsHookInterface;
 use Dleno\CommonCore\Websocket\Hook\AbstractWsHook;
 use Dleno\CommonCore\Middleware\Http\InitMiddleware;
 use Dleno\CommonCore\Websocket\Server\WebSocketAuthMiddleware;
+use Dleno\CommonCore\Middleware\Http\CoreMiddleware as HttpCoreMiddleware;
+use Dleno\CommonCore\Core\Route\RouterDispatcherFactory as RouterDispatcherFactory;
 
 use function Hyperf\Support\env;
 
@@ -31,7 +41,15 @@ class ConfigProvider
 {
     public function __invoke(): array
     {
+        EnvLoader::load(BASE_PATH);
+
         return [
+            //基础监听器自动注册；业务项目如需自定义 listener，只追加自己的 listener，避免重复注册这里的基础项。
+            'listeners'    => $this->baseListeners(),
+            //基础进程自动注册；业务项目如需自定义 process，只追加自己的 process，避免重复注册这里的基础项。
+            'processes'    => $this->autoProcesses(),
+            //基础退出信号处理自动注册；timeout 不在包内定义，避免业务侧设置标量时被 array_merge_recursive 合成数组。
+            'signal'       => $this->baseSignal(),
             //基础中间件自动注入（按启用的 server 注入对应基座中间件，与 app middlewares.php 追加合并）。
             'middlewares'  => $this->autoMiddlewares(),
             'dependencies' => [
@@ -50,10 +68,8 @@ class ConfigProvider
                 //HTTP 路由核心：Hyperf 未在自身 ConfigProvider 绑定这两个，故包内自注入即可生效（业务可在 app 覆盖）。
                 //注：RequestParserInterface / RequestInterface 因 Hyperf 自身 ConfigProvider 也绑、包内覆盖不住，
                 //   必须留在 app config/autoload/dependencies.php（唯一能稳定压过所有 ConfigProvider 的层）。
-                \Hyperf\HttpServer\CoreMiddleware::class
-                    => \Dleno\CommonCore\Middleware\Http\CoreMiddleware::class,
-                \Hyperf\HttpServer\Router\DispatcherFactory::class
-                    => \Dleno\CommonCore\Core\Route\RouterDispatcherFactory::class,
+                CoreMiddleware::class       => HttpCoreMiddleware::class,
+                DispatcherFactory::class    => RouterDispatcherFactory::class,
 
                 //WS 默认绑定：钩子默认 no-op（业务不覆盖即零成本；身份解析现走 WsHook::onHandshake）。
                 //WsBindStrategyInterface 无包内默认，业务必须在 app dependencies.php 绑定
@@ -86,6 +102,51 @@ class ConfigProvider
                         'desc',
                     ],
                 ],
+            ],
+        ];
+    }
+
+    /**
+     * 基础监听器注册。
+     *
+     * 这些监听器属于框架运行基座：
+     *  - PHP error 转 ErrorException
+     *  - 命令异常输出
+     *  - AsyncQueue timeout channel 自动 reload
+     */
+    private function baseListeners(): array
+    {
+        return [
+            ErrorExceptionHandler::class,
+            FailToHandleListener::class,
+            ReloadChannelListener::class,
+        ];
+    }
+
+    /**
+     * 基础进程注册。
+     *
+     * Crontab 调度进程只由 ENABLE_CRONTAB 控制；业务进程仍由业务项目自行定义。
+     */
+    private function autoProcesses(): array
+    {
+        $processes = [];
+        if (env('ENABLE_CRONTAB', false)) {
+            $processes[] = CrontabDispatcherProcess::class;
+        }
+        return $processes;
+    }
+
+    /**
+     * 基础退出信号处理。
+     *
+     * 只注册 handler，不定义 signal.timeout；业务项目可在 signal.php 追加 handler 或自行设置 timeout。
+     */
+    private function baseSignal(): array
+    {
+        return [
+            'handlers' => [
+                ProcessStopHandler::class,
             ],
         ];
     }
