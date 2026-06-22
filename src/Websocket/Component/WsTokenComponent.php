@@ -210,12 +210,37 @@ class WsTokenComponent extends BaseCoreComponent
     }
 
     /**
+     * 按维度只取反向索引的 field 列表(HKEYS):field 本身即 "sv:fd",在线判断只需 sv/fd,
+     * 用此可省去 HGETALL 读取 + JSON decode 整份 value(多连接维度收益明显)。
+     * @return string[] [ "sv:fd", ... ]
+     */
+    public function getDimBindFields($dim, $value)
+    {
+        $data = $this->redis->hKeys(WsKeys::bindDimKey($dim, $value));
+        return is_array($data) ? $data : [];
+    }
+
+    /**
      * 删除某维度反向索引里的一个连接项（field=sv:fd）
      * @return int
      */
     public function delDimBind($dim, $value, $field)
     {
         return $this->redis->hDel(WsKeys::bindDimKey($dim, $value), $field);
+    }
+
+    /**
+     * 批量删除某维度反向索引里的多个连接项(一次 HDEL key field1 field2 …),
+     * 供在线判断收集同一 value 下的失效项后一次性清理,避免逐 field 同步打 Redis。
+     * @param string[] $fields
+     * @return int 删除的 field 数
+     */
+    public function delDimBindFields($dim, $value, array $fields)
+    {
+        if (empty($fields)) {
+            return 0;
+        }
+        return (int) $this->redis->hDel(WsKeys::bindDimKey($dim, $value), ...$fields);
     }
 
     public function getServerFd($fd)

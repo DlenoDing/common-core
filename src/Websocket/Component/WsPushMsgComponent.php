@@ -97,6 +97,11 @@ class WsPushMsgComponent extends BaseCoreComponent
                 "checkRealtimeOnlineByDim 仅支持 uniqueDimensions 维度,[{$dim}] 非 unique;多连接维度的在线判断请用 checkHeartbeatOnlineByDim"
             );
         }
+        //先去重(重复值不应误触发上限),空入参直接返回
+        $values = array_values(array_unique($values));
+        if ($values === []) {
+            return [];
+        }
         //批量上限(禁全量/超大批量);下限 clamp 1,防 env 配 0/负导致恒抛异常
         $max = max(1, (int) env('WS_REALTIME_ONLINE_MAX', self::REALTIME_ONLINE_MAX));
         if (count($values) > $max) {
@@ -104,10 +109,10 @@ class WsPushMsgComponent extends BaseCoreComponent
                 "checkRealtimeOnlineByDim 批量上限 {$max},传入 " . count($values) . ";大批量/全量在线请用 checkHeartbeatOnlineByDim"
             );
         }
-        $values  = array_values(array_unique($values));
         $wssCpt  = get_inject_obj(WsServerComponent::class);
         $wstkCpt = get_inject_obj(WsTokenComponent::class);
         $servers = $wssCpt->getServerList();
+        $serverSet = array_fill_keys($servers, true);//在线判断转 set,O(1) 查找替 in_array
         //下限 clamp 1s,防 env 配 0(=BLPOP 永久阻塞)/负导致退化
         $timeout = max(1, (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT));
         $redis   = $this->redis;
@@ -115,31 +120,39 @@ class WsPushMsgComponent extends BaseCoreComponent
         //结果默认全 false;后续仅把"确有在线连接"的值翻 true
         $result = array_fill_keys($values, false);
 
-        //① 并发取每个值的绑定反向索引(仅 HGETALL,廉价;Parallel 以值为结果键,故前面已去重)
+        //① 并发取每个值的绑定反向索引【字段名】(HKEYS;field 即 sv:fd,无需读/decode 整份 JSON value)
         $parallel = new Parallel($concurrent);
         foreach ($values as $value) {
-            $parallel->add(fn () => $wstkCpt->getDimBind($dim, $value), (string) $value);
+            $parallel->add(fn () => $wstkCpt->getDimBindFields($dim, $value), (string) $value);
         }
-        $bindsByValue = $parallel->wait(false);//(string)value => binds(hash);取绑定失败的值缺席→保持 false
+        $fieldsByValue = $parallel->wait(false);//(string)value => [field, ...];取失败的值缺席→保持 false
 
-        //② 跨所有值,按服务器汇总全部 fd(同服务器所有用户的 fd 合成一批);并记下每个值占用的 (sv,fd) 以便回填
+        //② 跨所有值按服务器汇总 fd(同服务器所有用户合一批);记每值占用 (sv,fd) 以回填;同 value 失效项收集后一次 HDEL
         $valueConns = [];//(string)value => [[sv, fd], ...]
         $svFds      = [];//sv => [fd => fd]  (去重)
         foreach ($values as $value) {
-            $binds = $bindsByValue[(string) $value] ?? [];
-            if (empty($binds) || !is_array($binds)) {
+            $fields = $fieldsByValue[(string) $value] ?? [];
+            if (empty($fields) || !is_array($fields)) {
                 continue;
             }
-            foreach ($binds as $field => $serverFdJson) {
-                $serverFd = json_to_array($serverFdJson);
-                $sv = $serverFd['sv'];
-                $fd = (int) $serverFd['fd'];
-                if (!in_array($sv, $servers)) {
-                    $wstkCpt->delDimBind($dim, $value, $field);//对应服务器已无效,删除该连接项
+            $stale = [];
+            foreach ($fields as $field) {
+                //field = sv:fd;serverKey 可能含冒号(IPv6/自定义),用【最后一个】冒号拆,fd 取末段
+                $pos = strrpos((string) $field, ':');
+                if ($pos === false) {
+                    continue;
+                }
+                $sv = substr($field, 0, $pos);
+                $fd = (int) substr($field, $pos + 1);
+                if (!isset($serverSet[$sv])) {
+                    $stale[] = $field;//对应服务器已无效,收集待批量删
                     continue;
                 }
                 $valueConns[(string) $value][] = [$sv, $fd];
                 $svFds[$sv][$fd]               = $fd;
+            }
+            if (!empty($stale)) {
+                $wstkCpt->delDimBindFields($dim, $value, $stale);//同 value 失效项一次性 HDEL
             }
         }
         if (empty($svFds)) {
@@ -164,11 +177,24 @@ class WsPushMsgComponent extends BaseCoreComponent
                 if (empty($sig)) {
                     continue;
                 }
-                $sv = $sig[1];
-                if (!isset($pendingSv[$sv])) {
-                    continue;//非本批/重复信号
+                //ready list 元素双解析(滚动发布混版兼容):
+                //  新 worker = JSON {sv, pairs}(结果直接随就绪信号带回,省 HGETALL);
+                //  旧 worker = 纯 sv 字符串(结果仍在 result hash)→ 回落 HGETALL。
+                $elem    = $sig[1];
+                $decoded = json_to_array($elem);
+                if (is_array($decoded) && isset($decoded['sv'])) {
+                    $sv = (string) $decoded['sv'];
+                    if (!isset($pendingSv[$sv])) {
+                        continue;//非本批/重复信号
+                    }
+                    $fdOnline[$sv] = (isset($decoded['pairs']) && is_array($decoded['pairs'])) ? $decoded['pairs'] : [];
+                } else {
+                    $sv = (string) $elem;
+                    if (!isset($pendingSv[$sv])) {
+                        continue;
+                    }
+                    $fdOnline[$sv] = $redis->hGetAll(WsKeys::checkResultKey($rid, $sv));
                 }
-                $fdOnline[$sv] = $redis->hGetAll(WsKeys::checkResultKey($rid, $sv));
                 unset($pendingSv[$sv]);//该服务器已收齐
             }
         } catch (\Throwable $e) {
@@ -215,25 +241,38 @@ class WsPushMsgComponent extends BaseCoreComponent
      */
     public function checkHeartbeatOnlineByDim(string $dim, array $values, int $concurrent = 100)
     {
-        $values   = array_values(array_unique($values));
-        $wssCpt   = get_inject_obj(WsServerComponent::class);
-        $wstkCpt  = get_inject_obj(WsTokenComponent::class);
-        $servers  = $wssCpt->getServerList();
-        $parallel = new Parallel($concurrent);
+        $values = array_values(array_unique($values));
+        if ($values === []) {
+            return [];
+        }
+        $wssCpt    = get_inject_obj(WsServerComponent::class);
+        $wstkCpt   = get_inject_obj(WsTokenComponent::class);
+        $servers   = $wssCpt->getServerList();
+        $serverSet = array_fill_keys($servers, true);//在线判断转 set,O(1) 查找替 in_array
+        $parallel  = new Parallel($concurrent);
         foreach ($values as $value) {
             $parallel->add(
-                function () use ($wstkCpt, $servers, $dim, $value) {
-                    $binds = $wstkCpt->getDimBind($dim, $value);
-                    if (empty($binds)) {
+                function () use ($wstkCpt, $serverSet, $dim, $value) {
+                    //只取 field(sv:fd)(HKEYS),无需读/decode 整份 JSON value
+                    $fields = $wstkCpt->getDimBindFields($dim, $value);
+                    if (empty($fields)) {
                         return false;
                     }
-                    foreach ($binds as $field => $serverFdJson) {
-                        $serverFd = json_to_array($serverFdJson);
-                        if (in_array($serverFd['sv'], $servers)) {
-                            return true;//任一新鲜绑定落在在线 server 上 → 判在线(短路)
+                    $stale = [];
+                    foreach ($fields as $field) {
+                        //field = sv:fd;serverKey 可能含冒号(IPv6/自定义),用最后一个冒号拆,sv 取前段
+                        $pos = strrpos((string) $field, ':');
+                        if ($pos === false) {
+                            continue;
                         }
-                        //该绑定项所属 server 已下线 → 清理陈旧项(field=sv:fd)
-                        $wstkCpt->delDimBind($dim, $value, $field);
+                        if (isset($serverSet[substr($field, 0, $pos)])) {
+                            return true;//任一新鲜绑定落在在线 server 上 → 判在线(短路,纯读不写)
+                        }
+                        $stale[] = $field;//所属 server 已下线 → 收集待批量清理
+                    }
+                    //仅"全员离线"才会走到这:同 value 失效项一次性 HDEL(在线短路路径不触发写)
+                    if (!empty($stale)) {
+                        $wstkCpt->delDimBindFields($dim, $value, $stale);
                     }
                     return false;
                 },
