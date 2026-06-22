@@ -278,6 +278,60 @@ class WsPushMsgComponent extends BaseCoreComponent
     }
 
     /**
+     * 【心跳级·全量】返回该维度当前**在线的全部值**——无需调用方传 values。
+     * 仅 presence 索引(bucket 化)使这成为可能:遍历 N=presence_bucket_num 个【已知 bucket key】(非 keyspace SCAN、集群安全),
+     * 各 bucket HGETALL → 汇总 value→server 集合,任一 server 在线即在线。只返回在线值(value=>true)。
+     *
+     * 成本:N 次 HGETALL(默认 256,config 可调;并发重叠)——无论在线值多少都遍历全部 bucket,故适合"偶尔取全量在线快照"
+     * (如后台/统计),不适合高频热路径。返回体 O(M)(M=该维度在线值数)。
+     * 精度同心跳级:刚断连的值最多 ≤BIND_CACHE_TIME 内仍可能在列(presence TTL 滞留)。
+     * 限制:仅对 addressableDimensions() 维度有 presence;presence_bucket_num 中途改值会漏读旧桶,改值需在无流量窗口。
+     * @return array value => true(仅在线值;不在线/无 presence 的不返回)
+     */
+    public function checkHeartbeatOnlineAllByDim(string $dim, int $concurrent = 100): array
+    {
+        $serverSet = get_inject_obj(WsServerComponent::class)->getServerSetCached();
+        $redis     = $this->redis;
+        $count     = WsKeys::presenceBucketCount();
+
+        //遍历全部 bucket,每个 HGETALL → 该桶内 value=>serverList;按在线 server 过滤(并发重叠)
+        $parallel = new Parallel($concurrent);
+        for ($i = 0; $i < $count; $i++) {
+            $bucketKey = WsKeys::presenceBucketKey($dim, $i);
+            $parallel->add(
+                function () use ($redis, $bucketKey, $serverSet) {
+                    $all = $redis->hGetAll($bucketKey);//[ value => json([sv,...]) ]
+                    $out = [];//value => true(仅在线)
+                    if (is_array($all)) {
+                        foreach ($all as $value => $json) {
+                            $svs = json_to_array($json);
+                            if (!is_array($svs)) {
+                                continue;
+                            }
+                            foreach ($svs as $sv) {
+                                if (isset($serverSet[$sv])) {
+                                    $out[$value] = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    return $out;
+                },
+                $i
+            );
+        }
+
+        $result = [];
+        foreach ($parallel->wait(false) as $out) {
+            if (is_array($out)) {
+                $result += $out;//各 value 落唯一 bucket,无键冲突
+            }
+        }
+        return $result;
+    }
+
+    /**
      * 关闭客户端
      * @param $clients array 服务器标识{"192-168-6-9":[1,4,6]}（sv=>fds:-1表示所有）
      * @return bool

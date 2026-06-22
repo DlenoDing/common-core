@@ -84,11 +84,25 @@ class WsKeys
      */
     public static function presenceKey(string $dim, $value): string
     {
+        $bucket = (int) (crc32((string) $value) % self::presenceBucketCount());
+        return self::presenceBucketKey($dim, $bucket);
+    }
+
+    /**
+     * presence 的 bucket 总数(config('websocket.presence_bucket_num'),默认 256,≤0 回退默认)。
+     * 写/读/全量枚举三处共用,保证 bucket 编号一致(中途改值会让旧桶的值漏读,需在无流量窗口改)。
+     */
+    public static function presenceBucketCount(): int
+    {
         $num = (int) config('websocket.presence_bucket_num', self::PRESENCE_BUCKET_NUM);
-        if ($num < 1) {
-            $num = self::PRESENCE_BUCKET_NUM;
-        }
-        $bucket = (int) (crc32((string) $value) % $num);
+        return $num >= 1 ? $num : self::PRESENCE_BUCKET_NUM;
+    }
+
+    /**
+     * 按 bucket 序号构造 presence key:<prefix>online:<dim>:<bucket>。供全量枚举遍历 0..count-1。
+     */
+    public static function presenceBucketKey(string $dim, int $bucket): string
+    {
         return self::prefix() . self::SUFFIX_ONLINE . $dim . ':' . $bucket;
     }
 
