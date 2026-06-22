@@ -109,10 +109,9 @@ class WsPushMsgComponent extends BaseCoreComponent
                 "checkRealtimeOnlineByDim 批量上限 {$max},传入 " . count($values) . ";大批量/全量在线请用 checkHeartbeatOnlineByDim"
             );
         }
-        $wssCpt  = get_inject_obj(WsServerComponent::class);
-        $wstkCpt = get_inject_obj(WsTokenComponent::class);
-        $servers = $wssCpt->getServerList();
-        $serverSet = array_fill_keys($servers, true);//在线判断转 set,O(1) 查找替 in_array
+        $wssCpt    = get_inject_obj(WsServerComponent::class);
+        $wstkCpt   = get_inject_obj(WsTokenComponent::class);
+        $serverSet = $wssCpt->getServerSetCached();//在线服务器集合(进程级短缓存,O(1) isset 查找)
         //下限 clamp 1s,防 env 配 0(=BLPOP 永久阻塞)/负导致退化
         $timeout = max(1, (int) env('WS_REALTIME_ONLINE_TIMEOUT', self::REALTIME_ONLINE_TIMEOUT));
         $redis   = $this->redis;
@@ -232,8 +231,7 @@ class WsPushMsgComponent extends BaseCoreComponent
         }
         $wssCpt    = get_inject_obj(WsServerComponent::class);
         $wstkCpt   = get_inject_obj(WsTokenComponent::class);
-        $servers   = $wssCpt->getServerList();
-        $serverSet = array_fill_keys($servers, true);//在线判断转 set,O(1) 查找替 in_array
+        $serverSet = $wssCpt->getServerSetCached();//在线服务器集合(进程级短缓存,O(1) isset 查找)
         $parallel  = new Parallel($concurrent);
         foreach ($values as $value) {
             $parallel->add(
