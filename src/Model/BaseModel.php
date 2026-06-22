@@ -237,7 +237,11 @@ class BaseModel extends Model
                     $num = explode('@', $tableName);
                     $num = intval($num[1] ?? 0);
 
-                    $autoIncrement = $this->splitMaxNum * $num + 1;
+                    //表序号从 1 开始(1 基):@N 承载 id 区间 [(N-1)*splitMaxNum+1, N*splitMaxNum],
+                    //故自增基值 = (N-1)*splitMaxNum+1,与落表/反查的 ceil(id/splitMaxNum) 一致
+                    //(@00001 装 1..M、@00002 装 M+1..2M …)。原 `splitMaxNum*$num+1` 是 0 基、与 ceil 路由差一个分片宽,
+                    //会让子表自增生成的 id 被反查到下一分片、按 id 查不到。max(0,…) 兜底 @00000 等非法/低位表号,避免负自增基值。
+                    $autoIncrement = max(0, $num - 1) * $this->splitMaxNum + 1;
                 }
                 $prefix        = $this->getPrefix();
                 $autoIncrement = (int) $autoIncrement;
@@ -453,6 +457,44 @@ class BaseModel extends Model
     public static function getModel($alias = null, $connection = null, $primaryId = null)
     {
         return static::query($alias, $connection, $primaryId);
+    }
+
+    /**
+     * 按主键 id 路由到所属分表并查询单条(分表时按 id 反查表;非分表则查基表)。
+     * @param int|string $primaryId 主键值
+     * @return static|null
+     */
+    public static function findById($primaryId, array $columns = ['*'], $connection = null)
+    {
+        $query = static::query(null, $connection, $primaryId);
+        return $query->where($query->getModel()->getKeyName(), $primaryId)
+                     ->first($columns);
+    }
+
+    /**
+     * 按主键 id 路由到所属分表并更新该行。返回受影响行数。
+     * 注:走查询构造器 update(会自动维护 updated_at),不触发模型 saving/updating 事件;
+     * 需模型事件/钩子时请 findById 取出后再改属性 save。
+     * @param int|string $primaryId 主键值
+     * @return int
+     */
+    public static function updateById($primaryId, array $values, $connection = null)
+    {
+        $query = static::query(null, $connection, $primaryId);
+        return $query->where($query->getModel()->getKeyName(), $primaryId)
+                     ->update($values);
+    }
+
+    /**
+     * 按主键 id 路由到所属分表并删除该行(软删模型则为软删)。返回受影响行数。
+     * @param int|string $primaryId 主键值
+     * @return int
+     */
+    public static function deleteById($primaryId, $connection = null)
+    {
+        $query = static::query(null, $connection, $primaryId);
+        return $query->where($query->getModel()->getKeyName(), $primaryId)
+                     ->delete();
     }
 
     /**
