@@ -282,8 +282,10 @@ if (!function_exists('get_inject_obj')) {
 
 if (!function_exists('set_inject_obj')) {
     /**
-     * 获取注入对象
+     * 设置/覆盖容器内的注入对象
      * @param string $key
+     * @param mixed $entry
+     * @return void
      */
     function set_inject_obj($key, $entry)
     {
@@ -345,7 +347,7 @@ if (!function_exists('date_zone')) {
      * @param string $format 时间格式，如：Y-m-d H:i:s
      * @param int $timestamp 时间戳
      * @param string $toZone Asia/Shanghai（默认客户端时区）
-     * @return string|int
+     * @return string
      */
     function date_zone($format, $timestamp, $toZone = null)
     {
@@ -359,12 +361,12 @@ if (!function_exists('date_zone')) {
 
 if (!function_exists('zone_date')) {
     /**
-     * 将对应$fromZone的时间戳转换成$toZone的日期数据（默认客户端时区转到服务器时区）
+     * 将 $fromZone 时区的日期时间字符串转换到 $toZone 后按 $format 输出（默认客户端时区转服务器时区）。
      * @param string $dateTime 日期时间字符串（2021-01-14|2021-01-14 00:00:00）
      * @param string $format 输出格式
      * @param string $fromZone America/Denver
      * @param string $toZone Asia/Shanghai
-     * @return string|int
+     * @return string
      */
     function zone_date($dateTime, $format = 'U', $fromZone = null, $toZone = null)
     {
@@ -440,6 +442,9 @@ if (!function_exists('dynamic_rpc_service_get')) {
 }
 
 if (!function_exists('format_bytes')) {
+    /**
+     * 字节数转可读容量字符串。
+     */
     function format_bytes($bytes, $precision = 2)
     {
         $units = array("b", "kb", "mb", "gb", "tb");
@@ -455,6 +460,9 @@ if (!function_exists('format_bytes')) {
 }
 
 if (!function_exists('second2txt')) {
+    /**
+     * 秒数转中文时长文本。
+     */
     function second2txt($second)
     {
         $d = floor($second / (3600 * 24));
@@ -467,6 +475,9 @@ if (!function_exists('second2txt')) {
 }
 
 if (!function_exists('number_to_letter')) {
+    /**
+     * 正整数转 Excel 列名风格字母序号(1=A, 26=Z, 27=AA)。
+     */
     function number_to_letter($number)
     {
         $str = '';
@@ -481,6 +492,9 @@ if (!function_exists('number_to_letter')) {
 }
 
 if (!function_exists('str_to_time')) {
+    /**
+     * 日期时间字符串转时间戳;空值或无法解析时返回 0。
+     */
     function str_to_time($strTime)
     {
         if (empty($strTime)) {

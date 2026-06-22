@@ -31,6 +31,7 @@ class DcsLock
      * 注：phpredis OPT_PREFIX 自动前置在 {} 之外，不进入 tag，两键 tag 仍一致，故 OPT_PREFIX 下依然安全。
      * 因 Lua 与单键命令(set/get/ttl/expire/blPop)必须操作同一物理键，所有物理键站点统一经此换算；
      * 内存映射 self::$unlock 的数组键仍用逻辑 $lockKey（非 Redis key，不加 tag）。
+     * @param string $lockKey 逻辑锁 key
      */
     private static function realKey(string $lockKey): string
     {
@@ -39,6 +40,7 @@ class DcsLock
 
     /**
      * 等待队列键的物理名：与 realKey 共享同一 hash tag（$lockKey）以同 slot。
+     * @param string $lockKey 逻辑锁 key
      */
     private static function waitKey(string $lockKey): string
     {
@@ -129,6 +131,10 @@ class DcsLock
     /**
      * 续约 expire：value 校验后再 expire（仅当 key 的 value 仍是本协程 uuid 才续期），
      * 原子防止「误续他人锁」。Lua 完全不可用时降级为裸 expire(不校验 value，尽力而为)。
+     * @param RedisProxy $redis Redis 连接
+     * @param string $lockKey 逻辑锁 key
+     * @param string $uuid 持锁唯一标识
+     * @param int $time 锁持有时间(秒)
      * @return int|false 1=已续上；0=key 不存在或非本协程持有(应停止续约)；false 仅降级路径下 Lua 不可用时不会出现(已回退裸 expire)
      */
     private static function renewalExpire(RedisProxy $redis, string $lockKey, string $uuid, int $time)
@@ -150,6 +156,11 @@ EOF;
 
     /**
      * 排定下一次续约 Timer。
+     * @param string $lockKey 逻辑锁 key
+     * @param string $uuid 持锁唯一标识
+     * @param int $time 锁持有时间(秒)
+     * @param int $renewalTime 常规续约间隔毫秒
+     * @param int $cid 持锁协程 ID
      * @param int $delay 延迟毫秒(正常=renewalTime；瞬时失败重试=RENEWAL_RETRY_MS)
      */
     private static function scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, int $delay)
@@ -265,6 +276,10 @@ EOF;
      * 注：Hyperf 连接池下每次命令可能落在不同连接，无法依赖 getLastError 判断 NOSCRIPT，
      * 故以「EVALSHA 返回 false 即回退 EVAL」的方式兜底（脚本正常返回 0/1 不为 false，不会误触发）。
      *
+     * @param RedisProxy $redis Redis 连接
+     * @param string $script Lua 脚本
+     * @param array $params KEYS+ARGV 参数
+     * @param int $numKeys KEYS 数量
      * @return mixed 脚本返回值；Lua 完全不可用时返回 false
      */
     private static function evalLua(RedisProxy $redis, string $script, array $params, int $numKeys)
@@ -283,6 +298,7 @@ EOF;
     /**
      * 检测是否可使用浮点阻塞超时（结果进程级缓存，仅首次探测一次）。
      * 需同时满足：Redis 服务端 >= 6.0.0、phpredis 客户端 >= 5.3.0（可传 double 超时）。
+     * @param RedisProxy $redis Redis 连接
      */
     private static function supportFloatTimeout(RedisProxy $redis): bool
     {
@@ -323,6 +339,9 @@ EOF;
         return false;
     }
 
+    /**
+     * @internal 仅用于分布式锁本地调试验证,不作为业务 API。
+     */
     public static function testLock()
     {
         $result  = null;

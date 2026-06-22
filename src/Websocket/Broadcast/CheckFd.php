@@ -84,6 +84,8 @@ class CheckFd
     /**
      * SWOOLE_BASE：跨 Worker 批量询问。
      * 返回 [fd => true|false|null]（list）或 [fd => true]（all）。
+     * @param bool $isAll 是否查询全部在线 fd
+     * @param int[] $candidates 指定查询的 fd 列表
      */
     private static function queryBase(bool $isAll, array $candidates): array
     {
@@ -141,6 +143,12 @@ class CheckFd
     /**
      * 一个 rid 的一次往返：广播请求 → 全员应答 → 求在线并集。
      *
+     * @param \Swoole\Server $server Swoole server 实例
+     * @param int $workerNum 事件 Worker 数
+     * @param int $selfWid 当前可寻址 worker_id,不可寻址时为 -1
+     * @param bool $isEventWorker 当前进程是否事件 Worker
+     * @param string $mode FdCheckPipeMessage::MODE_*
+     * @param int[] $fdsChunk 本轮候选 fd 分块
      * @param int $need 需命中的候选数(list 模式)；-1 表示 all 模式(不早退、收齐为止)
      * @return array ['online' => int[], 'complete' => bool]
      *   complete=false 表示超时未收齐(有 Worker 未应答),未命中 fd 应视为"未知"(null)。

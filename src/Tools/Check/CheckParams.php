@@ -13,7 +13,7 @@ class CheckParams
     /**
      * 执行接口参数校验
      *
-     * @param array $rules 规则详见：https://hyperf.wiki/2.0/#/zh-cn/validation
+     * @param array $rules 规则详见：https://hyperf.wiki/3.1/#/zh-cn/validation
      * @param array $params
      * @param array $customAttributes
      * @param array $messages

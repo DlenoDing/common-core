@@ -98,7 +98,7 @@ class Distribution
     }
 
     /**
-     * 测试方法
+     * @internal 仅用于本类权重分配算法的本地调试验证,不作为业务 API。
      * @return array
      */
     public static function test()
@@ -144,6 +144,10 @@ class Distribution
         return $data;
     }
 
+    /**
+     * @internal 仅用于本类权重随机算法的本地调试验证,不作为业务 API。
+     * @param array $params 调试参数(当前未使用)
+     */
     public function test1(array $params)
     {
         $prizes = [

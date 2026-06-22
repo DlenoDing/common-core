@@ -17,6 +17,7 @@ class OutPut
      * 返回错误
      * @param string $msg 外显提示文案，非空string时才显示
      * @param int $code 服务错误码 默认 参数错误
+     * @param array $data 返回 data 数据
      * @param array $trace 系统跟踪消息
      * @return string
      */
@@ -53,6 +54,7 @@ class OutPut
      * @param int $code 返回自定义错误码
      * @param string $msg 返回 显示提示
      * @param array $trace 跟踪数据，内部使用
+     * @return string
      * */
     public static function outputJson(array $data, $code, $msg, $trace)
     {
@@ -91,6 +93,8 @@ class OutPut
 
     /**
      * 格式化返回数据字段Key(驼峰)+Value(字符串类型的值、自动转换时间)
+     * @param array|object $data
+     * @return array
      * */
     private static function formatData($data)
     {

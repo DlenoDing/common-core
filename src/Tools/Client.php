@@ -43,6 +43,11 @@ class Client
         return $ip;
     }
 
+    /**
+     * 阿里云 SLB RemoteIp 过滤:空值/unknown/阿里云保留段返回 false。
+     * @param string $ip
+     * @return bool
+     */
     public static function checkIpByAli($ip)
     {
         if (empty($ip) || strcasecmp($ip, 'unknown') == 0) {
@@ -52,6 +57,11 @@ class Client
         return preg_match("/^(100\\.64|100\\.251)\\./i", $ip) ? false : true;
     }
 
+    /**
+     * 判断是否为合法公网 IP。私网、保留地址、unknown、非法格式均返回 false。
+     * @param string $ip
+     * @return bool
+     */
     public static function checkIp($ip)
     {
         if (empty($ip) || strcasecmp($ip, 'unknown') == 0) {

@@ -19,7 +19,6 @@ class Logger
 
     /**
      * 获取控制台日志logger
-     * @param string $channel
      * @return LoggerInterface
      */
     public static function stdoutLog(): LoggerInterface
@@ -31,6 +30,7 @@ class Logger
     /**
      * 获取系统日志logger
      * @param string $channel
+     * @param string $group
      * @return LoggerInterface
      */
     public static function systemLog($channel = 'DEFAULT', $group = 'default'): LoggerInterface
@@ -43,6 +43,7 @@ class Logger
     /**
      * 获取API接口日志logger
      * @param string $channel
+     * @param string $group
      * @return LoggerInterface
      */
     public static function apiLog($channel = 'DEFAULT', $group = 'api'): LoggerInterface
@@ -55,6 +56,7 @@ class Logger
     /**
      * 获取sql日志logger
      * @param string $channel
+     * @param string $group
      * @return LoggerInterface
      */
     public static function sqlLog($channel = 'DEFAULT', $group = 'sql'): LoggerInterface
@@ -67,6 +69,7 @@ class Logger
     /**
      * 获取业务日志logger
      * @param string $channel
+     * @param string $group
      * @return LoggerInterface
      */
     public static function businessLog($channel = 'DEFAULT', $group = 'business'): LoggerInterface

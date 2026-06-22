@@ -5,6 +5,10 @@ namespace Dleno\CommonCore\Tools\Http;
 use Dleno\CommonCore\Tools\Logger;
 use Hyperf\Coroutine\Coroutine;
 
+/**
+ * HTTP 客户端封装:协程内走 Swoole Coroutine Client,非协程内走 curl。
+ * 返回结构固定为 ['statusCode','headers','body','errCode','errMsg']。
+ */
 class HttpClient
 {
     //默认超时(秒)。安全兜底,避免慢/挂起后端把协程永久阻塞;
@@ -20,10 +24,12 @@ class HttpClient
     ];
 
     /**
-     * get请求
+     * GET 请求。
      * @param string $url
-     * @param string|array $data
+     * @param string|array|object|null|false $data query 参数;字符串 '0'/数字 0 会作为有效查询值保留
      * @param array $header
+     * @param int $timeout 秒;-1 表示协程客户端不超时,curl 路径 <=0 表示不设超时
+     * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
     public static function get(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
@@ -35,10 +41,12 @@ class HttpClient
     }
 
     /**
-     * post请求
+     * POST 请求。
      * @param string $url
-     * @param string|array $data
+     * @param string|array|object|null $data 请求体
      * @param array $header
+     * @param int $timeout 秒
+     * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
     public static function post(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
@@ -50,10 +58,12 @@ class HttpClient
     }
 
     /**
-     * put请求
+     * PUT 请求。
      * @param string $url
-     * @param string|array $data
+     * @param string|array|object|null $data 请求体
      * @param array $header
+     * @param int $timeout 秒
+     * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
     public static function put(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
@@ -65,10 +75,12 @@ class HttpClient
     }
 
     /**
-     * PATCH请求
+     * PATCH 请求。
      * @param string $url
-     * @param string|array $data
+     * @param string|array|object|null $data 请求体
      * @param array $header
+     * @param int $timeout 秒
+     * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
     public static function patch(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
@@ -80,10 +92,12 @@ class HttpClient
     }
 
     /**
-     * DELETE请求
+     * DELETE 请求。
      * @param string $url
-     * @param string|array $data
+     * @param string|array|object|null $data 请求体
      * @param array $header
+     * @param int $timeout 秒
+     * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
     public static function delete(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
@@ -100,9 +114,11 @@ class HttpClient
      *   - 成功 errCode=0；
      *   - 失败 statusCode 为 Swoole 负值(-1连接失败/-2超时/-3服务端重置/-4发送失败)，errCode/errMsg 为底层原因。
      * @param string $url
-     * @param string|array $data
+     * @param string|array|object|null|false $data 请求体或 GET query 参数
+     * @param string $method HTTP 方法
      * @param array $header
      * @param int $timeout 秒；-1 表示不超时
+     * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
     public static function coRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
@@ -171,11 +187,11 @@ class HttpClient
      * 原生curl发送请求。
      * 返回 ['statusCode','headers','body','errCode','errMsg']：成功 errCode=0；失败 errCode 为 curl_errno、errMsg 为 curl_error。
      * @param string $url
-     * @param $data
+     * @param string|array|object|null|false $data 请求体或 GET query 参数
      * @param string $method
      * @param array $header
      * @param int $timeout 秒；<=0 表示不设超时
-     * @return array
+     * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
     public static function curlRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
@@ -311,6 +327,12 @@ class HttpClient
         }
     }
 
+    /**
+     * 构造 GET query 字符串。
+     * 注意:不能用 truthy 判断,$data 为 0/'0' 时应保留;null/false/空串表示不追加 query。
+     * @param string|array|object|null|false $data
+     * @return string
+     */
     private static function buildQuery($data): string
     {
         if (is_array($data) || is_object($data)) {

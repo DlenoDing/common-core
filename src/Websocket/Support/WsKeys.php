@@ -73,6 +73,8 @@ class WsKeys
 
     /**
      * 维度反向索引 key。dim='account_id' 时 = <prefix>bind:account_id:<v>。
+     * @param string $dim 维度名
+     * @param mixed $value 维度值
      */
     public static function bindDimKey(string $dim, $value): string
     {
@@ -83,6 +85,8 @@ class WsKeys
      * 心跳 presence 索引的 bucket key:<prefix>online:<dim>:<bucket>(HASH,field=value→json({sv:{fd:1}}))。
      * bucket = crc32(value) % presence_bucket_num,把"按值散落"的在线判断收敛成"按 bucket 批量 HMGET",
      * 同时分桶避免单 key/单 slot 热点。读写两侧用同一函数算 bucket,保证一致。
+     * @param string $dim 维度名
+     * @param mixed $value 维度值
      */
     public static function presenceKey(string $dim, $value): string
     {
@@ -107,6 +111,8 @@ class WsKeys
 
     /**
      * 按 bucket 序号构造 presence key:<prefix>online:<dim>:<bucket>。供全量枚举遍历 0..count-1。
+     * @param string $dim 维度名
+     * @param int $bucket bucket 序号
      */
     public static function presenceBucketKey(string $dim, int $bucket): string
     {
@@ -122,6 +128,7 @@ class WsKeys
      * Hyperf AsyncQueue 通道的固定 5 子键(供 clearRelServerData 的 unlink 直连删除)。
      * 必须与驱动写入的物理键一致：BaseDriverFactory 给 channel 包了 hash tag,
      * 故此处也用 hashTagChannel(queueName) 拼,既命中真实键、又让 5 子键同 slot(集群下 unlink 不 CROSSSLOT)。
+     * @param string $serverKey 服务器标识
      * @return string[]
      */
     public static function queueSubKeys(string $serverKey): array
@@ -132,6 +139,7 @@ class WsKeys
 
     /**
      * per-server 独立控制队列名(dedicated_queue 开关打开时,check/close 类 Job 走此队列)。
+     * @param string $serverKey 服务器标识
      */
     public static function dedicatedQueueName(string $serverKey): string
     {
@@ -140,6 +148,7 @@ class WsKeys
 
     /**
      * 独立控制队列的固定 5 子键(同 queueSubKeys,供 clearRelServerData 下线清理直连 unlink)。
+     * @param string $serverKey 服务器标识
      * @return string[]
      */
     public static function dedicatedQueueSubKeys(string $serverKey): array
@@ -151,6 +160,7 @@ class WsKeys
     /**
      * 在线检查就绪信号 LIST key:<prefix>check:ready:<rid>。消费方核验完某服务器即 rPush 一条 {sv,pairs}(结果直接带回),
      * 请求方 BLPOP 即时唤醒并取用(替代 10ms 轮询 + result hash 旁路);$rid 每次调用唯一做请求隔离;无信号时按超时兜底。
+     * @param string $rid 本次实时在线检查请求 ID
      */
     public static function checkReadyKey(string $rid): string
     {

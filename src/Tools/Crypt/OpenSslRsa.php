@@ -17,7 +17,7 @@ class OpenSslRsa
     /**
      * 私钥加密
      * @param string $dataContent 明文
-     * @param string $privateKey  私钥 PEM(必传)
+     * @param string $privateKey  必传私钥,可为 base64(PEM) 或原始 PEM
      * @return string|false hex 密文;失败 false
      */
     public static function encryptedByPrivateKey($dataContent, string $privateKey)
@@ -28,7 +28,7 @@ class OpenSslRsa
     /**
      * 私钥解密
      * @param string $encrypted  hex 密文
-     * @param string $privateKey 私钥 PEM(必传)
+     * @param string $privateKey 必传私钥,可为 base64(PEM) 或原始 PEM
      * @return string|false 明文;失败 false
      */
     public static function decryptByPrivateKey($encrypted, string $privateKey)
@@ -39,7 +39,7 @@ class OpenSslRsa
     /**
      * 公钥加密
      * @param string $dataContent 明文
-     * @param string $publicKey   公钥 PEM(必传)
+     * @param string $publicKey   必传公钥,可为 base64(PEM) 或原始 PEM
      * @return string|false hex 密文;失败 false
      */
     public static function encryptedByPublicKey($dataContent, string $publicKey)
@@ -50,7 +50,7 @@ class OpenSslRsa
     /**
      * 公钥解密
      * @param string $encrypted hex 密文
-     * @param string $publicKey 公钥 PEM(必传)
+     * @param string $publicKey 必传公钥,可为 base64(PEM) 或原始 PEM
      * @return string|false 明文;失败 false
      */
     public static function decryptByPublicKey($encrypted, string $publicKey)
@@ -59,6 +59,8 @@ class OpenSslRsa
     }
 
     /**
+     * @param mixed $dataContent 明文内容
+     * @param string $key 公钥/私钥 PEM
      * @param bool $usePrivate true=私钥加密;false=公钥加密
      * @return string|false
      */
@@ -92,6 +94,8 @@ class OpenSslRsa
     }
 
     /**
+     * @param string $encrypted hex 密文
+     * @param string $key 公钥/私钥 PEM
      * @param bool $usePrivate true=私钥解密;false=公钥解密
      * @return string|false
      */
@@ -127,6 +131,8 @@ class OpenSslRsa
      *  2) base64(完整 PEM)(两系统间传输的默认形式)→ 解码出 PEM；
      *  3) 仅 base64 内容(无头尾,可能未断行)→ 去空白、按 64 字符断行、补对应头尾,重组标准 PEM。
      * 头尾按公/私钥取 PUBLIC KEY / PRIVATE KEY(现代 SPKI/PKCS8 标签)。
+     * @param string $key 原始密钥内容
+     * @param bool $usePrivate true=私钥;false=公钥
      */
     private static function pem($key, bool $usePrivate): string
     {
@@ -152,6 +158,8 @@ class OpenSslRsa
 
     /**
      * 由密钥推导其字节数(位数/8),用于密文分块。
+     * @param string $key 标准 PEM
+     * @param bool $usePrivate true=私钥;false=公钥
      * @return int 失败返回 0
      */
     private static function keyBytes(string $key, bool $usePrivate): int

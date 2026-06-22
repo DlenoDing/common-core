@@ -19,6 +19,14 @@ class RpcMqCall
 {
     const DEFAULT_RETRY_NUM = 3;
 
+    /**
+     * 生产一条 MQ RPC 异步任务。发送失败时可执行失败回调,但返回值仍表示 MQ 发送是否成功。
+     * @param class-string $producerName Producer 消息类名
+     * @param array $data 业务数据,会放入消息体 data 字段
+     * @param array $callback 发送失败回调 [class/object, method]
+     * @param int $retry 最大投递次数
+     * @return bool MQ 发送是否成功
+     */
     public static function producerRpc(
         string $producerName,
         array $data,
@@ -59,6 +67,14 @@ class RpcMqCall
         return true;
     }
 
+    /**
+     * 消费 MQ RPC 任务并执行回调;失败时按 retry/number 重新投递,最终抛 ServerException 保留原始异常链。
+     * @param array $callback 消费回调 [class/object, method]
+     * @param array $data 消息体,需包含 data/retry/number 等字段
+     * @param string $producerName 非空时用于失败重投
+     * @param int|float $delay 重投延迟秒数
+     * @return void
+     */
     public static function consumerRpc(array $callback, array $data, string $producerName = '', $delay = 5)
     {
         $class    = $callback[0];

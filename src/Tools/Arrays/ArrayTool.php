@@ -5,6 +5,12 @@ namespace Dleno\CommonCore\Tools\Arrays;
 
 class ArrayTool
 {
+    /**
+     * 递归合并两个数组:$arr2 覆盖 $arr1,同名数组节点继续递归合并。
+     * @param array $arr1 基础数组
+     * @param array $arr2 覆盖数组
+     * @return array
+     */
     public static function merge($arr1, $arr2)
     {
         $rs   = [];

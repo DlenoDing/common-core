@@ -30,7 +30,7 @@ class PushMessageJob extends BaseJob
      */
     private $data;
 
-    //TODO 任务对象不能有大对象的属性（不能用注解）；否则会造成消息体过大
+    //注意:任务对象不能持有大对象属性（不能用注解注入），否则会放大队列消息体。
 
     public function __construct($cmd, $data = [])
     {

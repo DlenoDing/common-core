@@ -41,7 +41,7 @@ trait LockCheckTrait
      * 执行接口参数校验
      * 含 request 的类（如 Controller）：$params 为空时默认取 post 参数；
      * 无 request 的类（如 Component）：需显式传入 $params。
-     * @param array $rules 规则详见：https://hyperf.wiki/2.0/#/zh-cn/validation
+     * @param array $rules 规则详见：https://hyperf.wiki/3.1/#/zh-cn/validation
      * @param array $params
      * @param array $customAttributes
      * @param array $messages

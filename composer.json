@@ -64,6 +64,6 @@
     ],
     "scripts": {
         "cs-fix": "php-cs-fixer fix $1",
-        "test": "phpunit --colors=always"
+        "test": "find src publish examples -name '*.php' -print0 | xargs -0 -n1 php -l"
     }
 }

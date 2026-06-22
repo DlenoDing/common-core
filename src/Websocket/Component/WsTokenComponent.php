@@ -96,6 +96,10 @@ class WsTokenComponent extends BaseCoreComponent
      * 对"单连接维度"强制唯一:本连接刚写入反向索引后,踢掉同维度值下的其它连接(后登录踢前登录)。
      * 性能:仅在 uniqueDimensions 非空时进入;唯一维度的反向 hash 恒只含本连接(±个别旧连接),hGetAll 极小;
      * 仅当真有旧连接才下发 closeClient。不碰发消息/心跳路径。
+     * @param string[] $unique 单连接维度列表
+     * @param array $dims 当前连接绑定维度值
+     * @param string[] $addressable 可反查寻址维度列表
+     * @param string $serverFdStr 当前连接在反向索引里的 field(sv:fd)
      */
     private function enforceUnique(array $unique, array $dims, array $addressable, string $serverFdStr): void
     {
@@ -175,6 +179,8 @@ class WsTokenComponent extends BaseCoreComponent
      * 给反向索引续期(HEXPIRE 每-field 独立 TTL):死连接(无 onClose)的 field 到期后独立过期,
      * 不受同维度其他活跃连接续命影响,hash 全空后 Redis 自动删。
      * 注意:用 field 级 HEXPIRE 而非 key 级 expire——否则 key 级 TTL 一触发会把刚续过的活 field 一起删。
+     * @param string $dimKey 维度反向索引 key
+     * @param string $field 连接 field(sv:fd)
      */
     private function expireDimTtl(string $dimKey, string $field): void
     {
@@ -184,6 +190,8 @@ class WsTokenComponent extends BaseCoreComponent
     /**
      * 对 hash 的单个 field 设 BIND_CACHE_TIME 的 HEXPIRE(7.4+)。
      * rawCommand 不走 OPT_PREFIX,手动补全前缀(phpredis 部分版本无 hExpire() 方法,统一 rawCommand)。
+     * @param string $key 未带 phpredis OPT_PREFIX 的逻辑 key
+     * @param string $field hash field
      * @return mixed rawCommand 结果(数组,如 [1] 已设/[-2] 无此 field)
      */
     private function hExpireField(string $key, string $field)
@@ -195,7 +203,7 @@ class WsTokenComponent extends BaseCoreComponent
     //——— 心跳 presence 索引(ws:online:<dim>:<bucket> HASH,field=value→json({sv:{fd:1}}))———
     //单 bucket key 内用 Lua 原子维护 sv→fd 集合:只动这一个 key、不回读反向索引 → 无"重算"那条跨 key 竞态,集群安全。
     //setBind/refreshBind → presenceAdd(加 sv/fd + HEXPIRE;field 缺失即重建);unBind → presenceDel(精确删本 sv/fd)。
-    //语义(codex 校验):①能"只删自己 fd"(故用 sv→fd 集而非纯 count);②presence 与反向索引仍是两套 key、非一个事务
+    //语义:①能"只删自己 fd"(故用 sv→fd 集而非纯 count);②presence 与反向索引仍是两套 key、非一个事务
     //(第二套真相),写失败靠 refresh 重建→最终一致非强一致;③崩溃连接(无 unBind)的 fd 残留 field 内,随活连接续期挂着,
     //该值全无活连接后由 field TTL(HEXPIRE)兜底过期——故"干净即时"只在全程无崩溃时成立,混过崩溃残留则退回 ≤TTL。
     //HEXPIRE 每次 HSET 后紧跟(field 更新后需重设 field TTL)。
@@ -238,7 +246,13 @@ class WsTokenComponent extends BaseCoreComponent
         return $this->onlineCheckDims;
     }
 
-    /** setBind/refreshBind:把本 (sv,fd) 加入该值 presence 并续期(单 key Lua 原子;field 缺失即重建)。 */
+    /**
+     * setBind/refreshBind:把本 (sv,fd) 加入该值 presence 并续期(单 key Lua 原子;field 缺失即重建)。
+     * @param string $dim 维度名
+     * @param mixed $value 维度值
+     * @param string $sv 当前服务器标识
+     * @param mixed $fd 连接 fd
+     */
     private function presenceAdd(string $dim, $value, string $sv, $fd): void
     {
         $this->evalLua(
@@ -248,7 +262,13 @@ class WsTokenComponent extends BaseCoreComponent
         );
     }
 
-    /** unBind:从该值 presence 精确删本 (sv,fd);sv 的 fd 集空→删 sv;整体空→HDEL field(单 key Lua 原子)。 */
+    /**
+     * unBind:从该值 presence 精确删本 (sv,fd);sv 的 fd 集空→删 sv;整体空→HDEL field(单 key Lua 原子)。
+     * @param string $dim 维度名
+     * @param mixed $value 维度值
+     * @param string $sv 当前服务器标识
+     * @param mixed $fd 连接 fd
+     */
     private function presenceDel(string $dim, $value, string $sv, $fd): void
     {
         $this->evalLua(
@@ -263,6 +283,10 @@ class WsTokenComponent extends BaseCoreComponent
      * (执行即缓存,后续命中 EVALSHA)。与 DcsLock::evalLua 同款。
      * per-script 现算 sha1(短串微秒级,且本类有 ADD/DEL 两个脚本,共用单槽 SHA 会用错哈希);
      * 连接池下不能靠 getLastError 判 NOSCRIPT,故以"evalSha===false 即回退"兜底(脚本返回 0/1 不为 false,不会误触发)。
+     * @param string $script Lua 脚本
+     * @param array $params KEYS+ARGV 参数
+     * @param int $numKeys KEYS 数量
+     * @return mixed
      */
     private function evalLua(string $script, array $params, int $numKeys)
     {
@@ -321,6 +345,8 @@ class WsTokenComponent extends BaseCoreComponent
     /**
      * 按维度只取反向索引的 field 列表(HKEYS):field 本身即 "sv:fd",在线判断只需 sv/fd,
      * 用此可省去 HGETALL 读取 + JSON decode 整份 value(多连接维度收益明显)。
+     * @param string $dim
+     * @param mixed $value
      * @return string[] [ "sv:fd", ... ]
      */
     public function getDimBindFields($dim, $value)
@@ -331,6 +357,9 @@ class WsTokenComponent extends BaseCoreComponent
 
     /**
      * 删除某维度反向索引里的一个连接项（field=sv:fd）
+     * @param string $dim
+     * @param mixed $value
+     * @param string $field
      * @return int
      */
     public function delDimBind($dim, $value, $field)
@@ -341,6 +370,8 @@ class WsTokenComponent extends BaseCoreComponent
     /**
      * 批量删除某维度反向索引里的多个连接项(一次 HDEL key field1 field2 …),
      * 供在线判断收集同一 value 下的失效项后一次性清理,避免逐 field 同步打 Redis。
+     * @param string $dim
+     * @param mixed $value
      * @param string[] $fields
      * @return int 删除的 field 数
      */
@@ -352,6 +383,11 @@ class WsTokenComponent extends BaseCoreComponent
         return (int) $this->redis->hDel(WsKeys::bindDimKey($dim, $value), ...$fields);
     }
 
+    /**
+     * 生成当前连接的 serverFd 结构:sv=当前服务器标识,fd=连接 fd。
+     * @param mixed $fd 连接 fd
+     * @return array{sv:string,fd:mixed}
+     */
     public function getServerFd($fd)
     {
         $serverFd       = [];
@@ -362,12 +398,17 @@ class WsTokenComponent extends BaseCoreComponent
 
     /**
      * 反向索引里标识一个连接的唯一 field：sv:fd
+     * @param array{sv:string,fd:mixed} $serverFd
      */
     private function serverFdField(array $serverFd): string
     {
         return $serverFd['sv'] . ':' . $serverFd['fd'];
     }
 
+    /**
+     * 当前连接主绑定 key。
+     * @param array{sv:string,fd:mixed} $serverFd
+     */
     private function getSfdBindKey(array $serverFd)
     {
         return WsKeys::bindSfdKey($serverFd['sv'], $serverFd['fd']);

@@ -64,7 +64,7 @@ class WsPushMsgComponent extends BaseCoreComponent
 
     /**
      * 关闭指定连接
-     * @param $fd
+     * @param int|string $fd
      */
     public function close($fd)
     {
@@ -87,6 +87,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      *   - **批量有上限**(REALTIME_ONLINE_MAX,config('websocket.realtime_online.max')),超限抛异常;禁全量。
      * @param string $dim    维度名(须在 WsBindStrategy::uniqueDimensions() 内)
      * @param array  $values 维度值列表(数量 ≤ 上限)
+     * @param int    $concurrent 并发读取反向索引的协程数
      * @return array value => bool(任一连接实时在线即 true)
      */
     public function checkRealtimeOnlineByDim(string $dim, array $values, int $concurrent = 100)
@@ -219,6 +220,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      * 真要枚举某维度当前所有在线值,请用 checkHeartbeatOnlineAllByDim()(遍历已知 bucket key,非 keyspace SCAN)。
      * @param string $dim    维度名(须在 WsBindStrategy::onlineCheckDimensions() ∪ uniqueDimensions() 内,否则抛异常;presence 只为这些维度维护)
      * @param array  $values 要查询的维度值清单(显式列出,无"全量"哨兵;大批量/完整清单均可)
+     * @param int    $concurrent 并发读取 presence bucket 的协程数
      * @return array value => bool
      */
     public function checkHeartbeatOnlineByDim(string $dim, array $values, int $concurrent = 100)
@@ -287,6 +289,8 @@ class WsPushMsgComponent extends BaseCoreComponent
      * (如后台/统计),不适合高频热路径。返回体 O(M)(M=该维度在线值数)。
      * 精度同心跳级:干净断连会精确删本 fd、最后一个 fd 立即离线;崩溃残留/写失败等异常场景由 field TTL 兜底。
      * 限制:仅对 onlineCheckDimensions()∪uniqueDimensions() 维度有 presence;presence_bucket_num 中途改值会漏读旧桶,改值需在无流量窗口。
+     * @param string $dim 维度名(须可在线检查)
+     * @param int $concurrent 并发读取 bucket 的协程数
      * @return array value => true(仅在线值;不在线/无 presence 的不返回)
      */
     public function checkHeartbeatOnlineAllByDim(string $dim, int $concurrent = 100): array
@@ -336,6 +340,7 @@ class WsPushMsgComponent extends BaseCoreComponent
     /**
      * 校验 $dim 可被心跳在线检查:必须 ∈ onlineCheckDimensions() ∪ uniqueDimensions()(框架自动并入 unique 防漏设)。
      * 否则抛异常——presence 只为这些维度维护;低基数分组维度(device_type/channel 等)仅供 pushToDimMessage 寻址推送,不支持在线检查。
+     * @param string $dim 维度名
      */
     private function assertOnlineCheckDim(string $dim): void
     {
@@ -351,7 +356,7 @@ class WsPushMsgComponent extends BaseCoreComponent
 
     /**
      * 关闭客户端
-     * @param $clients array 服务器标识{"192-168-6-9":[1,4,6]}（sv=>fds:-1表示所有）
+     * @param array $clients 服务器标识{"192-168-6-9":[1,4,6]}（sv=>fds:-1表示所有）
      * @return bool
      */
     public function closeClient($clients = [])

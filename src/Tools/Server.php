@@ -29,6 +29,9 @@ class Server
         return false;
     }
 
+    /**
+     * 获取当前请求/协程的运行耗时与内存增量;无请求上下文时返回安全默认值。
+     */
     public static function runData()
     {
         //非请求上下文(队列/定时等没跑 InitMiddleware 的地方)调用时,REQUEST_RUN_START/MEM 可能未设;
@@ -156,6 +159,9 @@ class Server
         return current($macs);
     }
 
+    /**
+     * 检查 swoole_loader 授权域名是否覆盖当前请求 Host;未启用 swoole_loader 或本地 Host 默认放行。
+     */
     public static function swooleLoaderCheck()
     {
         if (!extension_loaded('swoole_loader')) {

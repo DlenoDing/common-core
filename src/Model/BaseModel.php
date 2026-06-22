@@ -133,6 +133,10 @@ class BaseModel extends Model
 
     /**
      * Create a new Model model instance.
+     * @param array $attributes 初始属性
+     * @param null|string $connection 数据连接名
+     * @param null|string $tableName 指定分表后缀/表名
+     * @param null|int|string $primaryId 分表路由用主键值
      */
     public function __construct(array $attributes = [], $connection = null, $tableName = null, $primaryId = null)
     {
@@ -295,6 +299,9 @@ class BaseModel extends Model
      * - 剥离基表自带的 AUTO_INCREMENT，避免分表继承主表计数器
      * - 出生即写入分表应有的自增基值，消除 CREATE 与 ALTER 之间的空窗
      * 取不到基表 DDL 时返回 null，由调用方退回 LIKE + ALTER 两步兜底。
+     * @param string $prefix 数据表前缀
+     * @param string $tableName 新分表逻辑名
+     * @param int $autoIncrement 分表初始自增值
      */
     private function splitBuildCreateSql(string $prefix, string $tableName, int $autoIncrement): ?string
     {
@@ -326,6 +333,7 @@ class BaseModel extends Model
     /**
      * 判断异常是否为「表已存在」(MySQL 1050 / SQLSTATE 42S01)。
      * 配合 CREATE TABLE IF NOT EXISTS 作为双重保险：并发抢建时一律视为成功并继续。
+     * @param \Throwable $e 建表异常
      */
     private function isTableExistsError(\Throwable $e): bool
     {
@@ -439,6 +447,11 @@ class BaseModel extends Model
         return $prevTable;
     }
 
+    /**
+     * 分表模型按主键值切换到对应物理表;非分表模型无操作。
+     * @param int|string $primaryId 主键值
+     * @return $this
+     */
     public function splitSetTableByPrimaryId($primaryId)
     {
         if ($this->splitMode != self::SPLIT_MODE_NO) {
@@ -465,6 +478,8 @@ class BaseModel extends Model
     /**
      * 按主键 id 路由到所属分表并查询单条(分表时按 id 反查表;非分表则查基表)。
      * @param int|string $primaryId 主键值
+     * @param array $columns 查询字段
+     * @param null|string $connection 数据连接名
      * @return static|null
      */
     public static function findById($primaryId, array $columns = ['*'], $connection = null)
@@ -479,6 +494,8 @@ class BaseModel extends Model
      * 注:走查询构造器 update(会自动维护 updated_at),不触发模型 saving/updating 事件;
      * 需模型事件/钩子时请 findById 取出后再改属性 save。
      * @param int|string $primaryId 主键值
+     * @param array $values 更新字段
+     * @param null|string $connection 数据连接名
      * @return int
      */
     public static function updateById($primaryId, array $values, $connection = null)
@@ -491,6 +508,7 @@ class BaseModel extends Model
     /**
      * 按主键 id 路由到所属分表并删除该行(软删模型则为软删)。返回受影响行数。
      * @param int|string $primaryId 主键值
+     * @param null|string $connection 数据连接名
      * @return int
      */
     public static function deleteById($primaryId, $connection = null)
@@ -505,6 +523,7 @@ class BaseModel extends Model
      * @param null|string $alias 指定别名，不指定则使用属性定义
      * @param null|string $connection 数据连接名，不指定则使用属性定义
      * @param null|int $primaryId 分表时使用，用于根据$primaryId定位所属的表
+     * @param null|string $tableName 指定分表名/后缀
      * @return \Hyperf\Database\Model\Builder
      */
     public static function query($alias = null, $connection = null, $primaryId = null, $tableName = null)
@@ -536,9 +555,9 @@ class BaseModel extends Model
     }
 
     /**
-     * Begin querying the model on a given connection.
+     * 指定分表名查询。
      *
-     * @param null|string $connection 数据连接名，不指定则使用属性定义
+     * @param null|string $tableName 分表名/后缀,由分表初始化逻辑拼成实际表名
      * @param null|string $connection 数据连接名，不指定则使用属性定义
      * @param null|string $alias 指定别名，不指定则使用属性定义
      * @return \Hyperf\Database\Model\Builder
@@ -550,7 +569,8 @@ class BaseModel extends Model
 
     /**
      * Begin querying the model on the write connection.
-     *
+     * @param null|string $connection 数据连接名，不指定则使用属性定义
+     * @param null|string $alias 指定别名，不指定则使用属性定义
      * @return Builder<static>
      */
     public static function onWriteConnection($connection = null, $alias = null)
@@ -563,6 +583,7 @@ class BaseModel extends Model
      * Get all of the models from the database.
      *
      * @param array|mixed $columns
+     * @param null|string $connection 数据连接名，不指定则使用属性定义
      * @return \Hyperf\Database\Model\Collection|static[]
      */
     public static function all($columns = ['*'], $connection = null)
@@ -575,6 +596,7 @@ class BaseModel extends Model
      * Begin querying a model with eager loading.
      *
      * @param array|string $relations
+     * @param null|string $connection 数据连接名，不指定则使用属性定义
      * @return \Hyperf\Database\Model\Builder|static
      */
     public static function with($relations, $connection = null)
@@ -585,7 +607,8 @@ class BaseModel extends Model
 
     /**
      * 设置别名
-     * @param $alias
+     * @param string $alias
+     * @return $this
      */
     public function setAlias($alias)
     {
@@ -596,6 +619,7 @@ class BaseModel extends Model
 
     /**
      * 获取别名
+     * @return string
      */
     public function getAlias()
     {
@@ -604,7 +628,7 @@ class BaseModel extends Model
 
     /**
      * 静态方法获取表名，主要用于join类的方法，不在代码里直接写表名
-     * @param null $alias
+     * @param null|string $alias 指定别名
      * @return string
      */
     public static function tableName($alias = null)
@@ -612,6 +636,11 @@ class BaseModel extends Model
         return (new static())->getTable($alias);
     }
 
+    /**
+     * 构造 insert on duplicate update 的 values(`column`) 更新表达式。
+     * @param array $item 待更新字段名集合,字段名会做白名单校验
+     * @return array<string,\Hyperf\Database\Query\Expression>
+     */
     public static function insertOnDuplicateVal($item)
     {
         $data = [];
@@ -627,7 +656,7 @@ class BaseModel extends Model
 
     /**
      * 获取表名，可重新指定别名
-     * @param null $alias
+     * @param null|string $alias 指定别名
      * @return string
      */
     public function getTable($alias = null): string
@@ -642,12 +671,18 @@ class BaseModel extends Model
         return $table;
     }
 
+    /**
+     * 获取当前连接的表前缀。
+     */
     public function getPrefix()
     {
         $tablePrefix = config('databases.' . $this->getConnectionName() . '.prefix');
         return $tablePrefix;
     }
 
+    /**
+     * 获取当前连接的数据库名。
+     */
     public function getDataBase()
     {
         $database = config('databases.' . $this->getConnectionName() . '.database');
@@ -673,6 +708,7 @@ class BaseModel extends Model
 
     /**
      * Save the model to the database.
+     * @param array $options 保存选项
      */
     public function save(array $options = []): bool
     {

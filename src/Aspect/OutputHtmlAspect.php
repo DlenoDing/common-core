@@ -26,7 +26,7 @@ class OutputHtmlAspect extends AbstractAspect
         // 切面切入后，执行对应的方法会由此来负责
         // $proceedingJoinPoint 为连接点，通过该类的 process() 方法调用原方法并获得结果
         // 在调用前进行某些处理
-        //不自动驼峰转换
+        //标记本次请求使用 HTML/纯文本输出模式
         Context::set(RequestConf::OUTPUT_HTML, true);
 
         $result = $proceedingJoinPoint->process();
