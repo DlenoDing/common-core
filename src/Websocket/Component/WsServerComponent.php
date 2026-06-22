@@ -6,6 +6,7 @@ namespace Dleno\CommonCore\Websocket\Component;
 
 use Dleno\CommonCore\Base\BaseCoreComponent;
 use Dleno\CommonCore\Websocket\Support\WsKeys;
+use Dleno\CommonCore\Websocket\Support\WsProcessSwitch;
 use Dleno\CommonCore\Tools\Server;
 use Hyperf\Coroutine\Coroutine;
 use Hyperf\Di\Annotation\Inject;
@@ -74,9 +75,14 @@ class WsServerComponent extends BaseCoreComponent
         //后台异步清理(用 Coroutine::create 保留父协程 Context,避免裸 go() 丢上下文/吞异常)
         Coroutine::create(
             function () use ($offLines) {
+                $dedicated = WsProcessSwitch::dedicatedQueueEnabled();
                 foreach ($offLines as $offLine) {
                     //下线服务器队列 = Hyperf AsyncQueue 通道,固定 5 子键,直接 UNLINK,无需扫库
                     $this->redis->unlink(...WsKeys::queueSubKeys($offLine));
+                    //独立控制队列开启时,其 5 子键同样需随下线清理
+                    if ($dedicated) {
+                        $this->redis->unlink(...WsKeys::dedicatedQueueSubKeys($offLine));
+                    }
                 }
             }
         );

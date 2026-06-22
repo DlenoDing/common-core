@@ -29,6 +29,7 @@ class WsKeys
     const SUFFIX_BIND_SFD    = 'bind:sfd:';          // serverFd 主绑定
     const SUFFIX_BIND_DIM    = 'bind:';              // 维度反向索引前缀（dim=account_id 时即 ...bind:account_id:）
     const SUFFIX_QUEUE       = 'queue:message:';     // per-server 实时消息队列
+    const SUFFIX_QUEUE_CTL   = 'queue:ctl:';         // per-server 独立控制队列(check/close;dedicated_queue 开关打开时启用)
     const SUFFIX_CHECK       = 'check:online:';      // 在线检查结果(HASH: <rid>:<sv> → field=fd)
     const SUFFIX_CHECK_READY = 'check:ready:';       // 在线检查就绪信号(LIST: <rid> → 各服务器核验完 rPush 其 sv)
 
@@ -96,6 +97,24 @@ class WsKeys
     public static function queueSubKeys(string $serverKey): array
     {
         $c = BaseDriverFactory::hashTagChannel(self::queueName($serverKey));
+        return [$c . ':waiting', $c . ':reserved', $c . ':delayed', $c . ':failed', $c . ':timeout'];
+    }
+
+    /**
+     * per-server 独立控制队列名(dedicated_queue 开关打开时,check/close 类 Job 走此队列)。
+     */
+    public static function dedicatedQueueName(string $serverKey): string
+    {
+        return self::prefix() . self::SUFFIX_QUEUE_CTL . $serverKey;
+    }
+
+    /**
+     * 独立控制队列的固定 5 子键(同 queueSubKeys,供 clearRelServerData 下线清理直连 unlink)。
+     * @return string[]
+     */
+    public static function dedicatedQueueSubKeys(string $serverKey): array
+    {
+        $c = BaseDriverFactory::hashTagChannel(self::dedicatedQueueName($serverKey));
         return [$c . ':waiting', $c . ':reserved', $c . ':delayed', $c . ':failed', $c . ':timeout'];
     }
 

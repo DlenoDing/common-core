@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Dleno\CommonCore\Websocket\Process;
 
 use Dleno\CommonCore\Base\AsyncQueue\BaseQueueConsumer;
-use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\MessageQueueRouting;
 use Dleno\CommonCore\Websocket\Support\WsProcessSwitch;
 use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 use Hyperf\Process\Annotation\Process;
@@ -20,30 +20,22 @@ use Hyperf\Process\Annotation\Process;
 #[Process]
 class DcsMessageConsumer extends BaseQueueConsumer
 {
-    /**
-     * 本机 per-IP 队列名缓存。
-     * 不能用 empty($this->queue) 判断——父类 BaseQueueConsumer::$queue 默认 'default'(非空),
-     * 会导致覆盖永不触发、误消费 default 队列。用独立静态变量判断并赋值。
-     * @var string|null
-     */
-    private static ?string $msgQueue = null;
+    use MessageQueueRouting;//队列名/配置段(实时消息通道,与 PushMessageJob 同一真相)
 
     public function getQueue()
     {
-        if (self::$msgQueue === null) {
-            self::$msgQueue = WsPushMsgComponent::getQueue();
-        }
-        $this->queue = self::$msgQueue;
+        //直接赋值覆盖父类默认 'default'(不能用 empty($this->queue) 判断,父类默认非空会致覆盖永不触发)
+        $this->queue = self::resolveQueue();
         return $this->queue;
     }
 
     /**
-     * 队列驱动配置：与生产 Job 共用 WsQueueConfig（业务调优走 config('websocket.queue')）。
+     * 队列驱动配置：与生产 Job(PushMessageJob)共用同一通道路由（业务调优走 config('websocket.queue')）。
      * @return array
      */
     public function getConfig()
     {
-        return WsQueueConfig::resolve($this->getQueue());
+        return WsQueueConfig::resolve($this->getQueue(), self::resolveConfigKey());
     }
 
     public function isEnable($server): bool

@@ -7,7 +7,7 @@ namespace Dleno\CommonCore\Websocket\Job;
 use Dleno\CommonCore\Base\AsyncQueue\BaseJob;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Websocket\Broadcast\CheckFd;
-use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\ControlQueueRouting;
 use Dleno\CommonCore\Websocket\Support\WsKeys;
 use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 use Dleno\CommonCore\Websocket\Component\WsServerComponent;
@@ -21,6 +21,8 @@ use Hyperf\Redis\Redis;
  */
 class CheckOnlineJob extends BaseJob
 {
+    use ControlQueueRouting;//队列名/配置段(控制通道,随 dedicated 开关)
+
     //接收参数(待核验的 fd 列表)
     /**
      * @var int[]|int
@@ -94,17 +96,18 @@ class CheckOnlineJob extends BaseJob
     public function getQueue()
     {
         if (empty($this->queue)) {
-            $this->queue = WsPushMsgComponent::getQueue();
+            $this->queue = self::resolveQueue();
         }
         return $this->queue;
     }
 
     /**
      * 自定义 async_queue 对应的$this->queue配置项（动态queue时才需要处理此函数）
+     * 配置段与 getQueue 的路由同步(由 ControlQueueRouting 决定)。
      * @return array
      */
     public function getConfig()
     {
-        return WsQueueConfig::resolve($this->getQueue());
+        return WsQueueConfig::resolve($this->getQueue(), self::resolveConfigKey());
     }
 }

@@ -33,4 +33,17 @@ class WsProcessSwitch
         }
         return true;
     }
+
+    /**
+     * 是否启用「独立控制队列」(check/close 等控制类 Job 与实时消息分流)。
+     *
+     * 默认关：CheckOnlineJob/CloseMessageJob 与 PushMessageJob 同走 per-IP 实时消息队列、共用 DcsMessageConsumer。
+     * 打开后:控制类 Job 改走独立队列 ws:queue:ctl:<sv>,由独立进程 DcsControlConsumer 消费,
+     * 使「在线核验/主动断连」不再与「真实消息下发」抢同一队列/消费协程(消除头阻塞)。
+     * 仅控制路由与是否启动独立进程,关时零开销(独立进程不启、Job 落回原队列)。
+     */
+    public static function dedicatedQueueEnabled(): bool
+    {
+        return (bool) config('websocket.dedicated_queue.enable', false);
+    }
 }

@@ -8,6 +8,7 @@ use Dleno\CommonCore\Base\AsyncQueue\BaseJob;
 use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Websocket\Broadcast\WsBroadcast;
 use Dleno\CommonCore\Websocket\Component\WsPushMsgComponent;
+use Dleno\CommonCore\Websocket\Support\MessageQueueRouting;
 use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
 
 /**
@@ -17,6 +18,8 @@ use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
  */
 class PushMessageJob extends BaseJob
 {
+    use MessageQueueRouting;//队列名/配置段(实时消息通道)
+
     //接收参数（可自定义其他或者多个）
     /**
      * @var int
@@ -74,7 +77,7 @@ class PushMessageJob extends BaseJob
     public function getQueue()
     {
         if (empty($this->queue)) {
-            $this->queue = WsPushMsgComponent::getQueue();
+            $this->queue = self::resolveQueue();
         }
         return $this->queue;
     }
@@ -85,6 +88,6 @@ class PushMessageJob extends BaseJob
      */
     public function getConfig()
     {
-        return WsQueueConfig::resolve($this->getQueue());
+        return WsQueueConfig::resolve($this->getQueue(), self::resolveConfigKey());
     }
 }

@@ -148,7 +148,7 @@ class WsPushMsgComponent extends BaseCoreComponent
         //③ 每服务器只下一个批量 job(该服务器上所有待查用户的全部 fd 一次核验),单 rid(本次调用内共用,跨调用随机隔离 #7)
         $rid = bin2hex(random_bytes(8));
         foreach ($svFds as $sv => $fds) {
-            AsyncQueue::push((new CheckOnlineJob(array_values($fds), $rid))->setQueue(self::getQueue($sv)));
+            AsyncQueue::push((new CheckOnlineJob(array_values($fds), $rid))->setQueue(CheckOnlineJob::resolveQueue($sv)));
         }
 
         //④ 等结果:消费方写完某服务器的结果 hash 后 rPush 其 sv 到就绪信号;这里 BLPOP 即时唤醒收齐各服务器结果。
@@ -248,15 +248,15 @@ class WsPushMsgComponent extends BaseCoreComponent
                     continue;
                 }
                 $job = new CloseMessageJob($fds ?: '-1');
-                $job->setQueue(self::getQueue($sv));
+                $job->setQueue(CloseMessageJob::resolveQueue($sv));
                 $ret[] = AsyncQueue::push($job);
             }
         } else {//所有
             $servers = get_inject_obj(WsServerComponent::class)->getServerList();
             foreach ($servers as $server) {
-                //分发到对应服务器的消息队列
+                //分发到对应服务器的控制队列(由 CloseMessageJob 决定:开关开→独立控制队列,关→回落消息队列)
                 $job = new CloseMessageJob('-1');
-                $job->setQueue(self::getQueue($server));
+                $job->setQueue(CloseMessageJob::resolveQueue($server));
                 $ret[] = AsyncQueue::push($job);
             }
         }
@@ -294,7 +294,7 @@ class WsPushMsgComponent extends BaseCoreComponent
             }
             //分发到对应服务器的消息队列
             $job = new PushMessageJob($cmd, $msg);
-            $job->setQueue(self::getQueue($server));
+            $job->setQueue(PushMessageJob::resolveQueue($server));
             $ret[] = AsyncQueue::push($job, intval($delay));
         }
         if (!in_array(true, $ret)) {
@@ -336,7 +336,7 @@ class WsPushMsgComponent extends BaseCoreComponent
             $msg = $this->formatMessage($cmd, $message, $serverFd['fd']);
             //分发到对应服务器的消息队列
             $job = new PushMessageJob($cmd, $msg);
-            $job->setQueue(self::getQueue($serverFd['sv']));
+            $job->setQueue(PushMessageJob::resolveQueue($serverFd['sv']));
             $ret[] = AsyncQueue::push($job, intval($delay));
         }
 
@@ -354,14 +354,4 @@ class WsPushMsgComponent extends BaseCoreComponent
         return $message;
     }
 
-    /**
-     * 获取实时消息队列名称
-     * @param string|null $server
-     * @return string
-     */
-    public static function getQueue($server = null)
-    {
-        $server = get_inject_obj(WsServerComponent::class)->getServerKey($server);
-        return WsKeys::queueName($server);
-    }
 }
