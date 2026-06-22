@@ -32,6 +32,12 @@ class WsTokenComponent extends BaseCoreComponent
     protected WsBindStrategyInterface $bindStrategy;
 
     /**
+     * 可在线检查维度集合(onlineCheckDimensions ∪ uniqueDimensions)在进程内稳定,缓存后避免 set/refresh/unBind 热路径反复 merge/flip。
+     * @var string[]|null
+     */
+    private ?array $onlineCheckDims = null;
+
+    /**
      * 设置连接绑定
      * @param $fd
      */
@@ -223,10 +229,13 @@ class WsTokenComponent extends BaseCoreComponent
      */
     private function onlineCheckDims(): array
     {
-        return array_keys(array_flip(array_merge(
-            $this->bindStrategy->onlineCheckDimensions(),
-            $this->bindStrategy->uniqueDimensions()
-        )));
+        if ($this->onlineCheckDims === null) {
+            $this->onlineCheckDims = array_keys(array_flip(array_merge(
+                $this->bindStrategy->onlineCheckDimensions(),
+                $this->bindStrategy->uniqueDimensions()
+            )));
+        }
+        return $this->onlineCheckDims;
     }
 
     /** setBind/refreshBind:把本 (sv,fd) 加入该值 presence 并续期(单 key Lua 原子;field 缺失即重建)。 */

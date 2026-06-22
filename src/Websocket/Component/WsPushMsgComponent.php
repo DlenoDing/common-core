@@ -209,7 +209,7 @@ class WsPushMsgComponent extends BaseCoreComponent
      * 【心跳级】在线判断:读 presence 索引(ws:online:<dim>:<bucket>,field=value→json({sv:{fd:1}}))——
      * 某维度值名下存在「在线 server」即视为在线。presence 由绑定写路径(setBind/refreshBind/unBind)用单 key Lua 直接维护
      * (不回读反向索引重算),带 field 级 HEXPIRE(BIND_CACHE_TIME)自洁;此处只读、纯批量。
-     * 精度为心跳/TTL 粒度:刚断的连接最多 ≤BIND_CACHE_TIME 秒内仍可能判在线(干净断连也走 TTL,见 WsTokenComponent presence 语义)。
+     * 精度为心跳/TTL 粒度:干净断连会精确删本 fd、最后一个 fd 立即离线;崩溃残留/写失败等异常场景由 field TTL 兜底。
      *
      * 性能:values 按 bucket 分组,每个 bucket 一次 HMGET(单 key,集群安全),N 个值 → 至多 min(bucket数, N) 次 HMGET,
      * 不再每值一次 HKEYS;HMGET 之间按 $concurrent 并发重叠 RTT。"server 下线即排除"靠读时与 getServerSetCached() 取交集保住。

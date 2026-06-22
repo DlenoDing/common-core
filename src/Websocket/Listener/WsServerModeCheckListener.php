@@ -72,7 +72,7 @@ class WsServerModeCheckListener implements ListenerInterface
 
     /**
      * 探测 Redis 是否支持 HEXPIRE(Redis 7.4+)。
-     * 能连 Redis 但 HEXPIRE 不可用(< 7.4 或不支持的分支)→ 终止;连不上 Redis → 仅警告不阻断(属运行期问题,不在此误杀)。
+     * 能连 Redis 但 HEXPIRE 不可用(< 7.4 或不支持的分支)→ 终止;连不上 Redis → 仅告警放行(避免启动期误杀临时网络/依赖编排抖动)。
      */
     private function checkRedisHExpire(): void
     {
