@@ -95,17 +95,11 @@ class InitMiddleware implements MiddlewareInterface
         rpc_context_set(RpcContextConf::CLIENT_IP, Client::getIP());//客户端IP
         rpc_context_set(RpcContextConf::CLIENT_DEVICE, Client::getDevice());//客户端设备号
 
-        if (get_header_val('Client-Version', 0)) {
-            rpc_context_set(RpcContextConf::CLIENT_VERSION, (int)get_header_val('Client-Version', '0'));//客户端插件版本
-        }
-        if (get_header_val('Client-ManagerId', 0)) {
-            rpc_context_set(RpcContextConf::MANAGER_ID, (int)get_header_val('Client-ManagerId', '0'));//管理员ID
-        }
         //处理参数
         $this->initRequest();
 
-        //其他RPC上下文写在对应项目的自定义中间件内
-        //rpc_context_set('testKey', 'i am api');
+        //业务专属上下文(如 管理员ID、客户端版本 等)由业务方在自定义中间件里读 header 自行 rpc_context_set，框架不内置：
+        //  if (get_header_val('Client-ManagerId', 0)) { rpc_context_set('_MANAGER_ID_', (int)get_header_val('Client-ManagerId', '0')); }
 
         return $handler->handle($request);
     }
