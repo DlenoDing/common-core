@@ -28,6 +28,7 @@ composer require dleno/common-core:^3.1
 
 - 扫描 `src/` 下的注解。
 - 自动加载 `src/common/Functions.php` 全局函数。
+- 通过 `dleno/hyperf-env-multi` 显式加载环境文件：先加载 `.env`，再按 `APP_ENV` 加载 `.env.<APP_ENV>`，环境文件中的同名变量以后者为准。
 - 注入部分基础 dependencies。
 - 按 `ENABLE_HTTP` / `ENABLE_WS` 自动注入 HTTP / WS 基础中间件。
 - 提供 WebSocket 配置发布模板，可通过 `vendor:publish` 写入 `config/autoload/websocket.php`。
@@ -84,13 +85,19 @@ return [
 
 ### WebSocket 业务策略绑定
 
-WebSocket 的连接维度和身份解析属于业务决策，common-core 不提供默认绑定策略。业务项目需要在 `dependencies.php` 中绑定：
+WebSocket 的连接维度属于业务决策，common-core 不提供默认绑定策略。业务项目必须在 `dependencies.php` 中绑定 `WsBindStrategyInterface`：
 
 ```php
 return [
     Dleno\CommonCore\Websocket\Contract\WsBindStrategyInterface::class
         => App\WebSocket\Bind\DefaultWsBindStrategy::class,
+];
+```
 
+`WsHookInterface` 已有 no-op 默认实现，业务不需要身份解析、握手校验或生命周期钩子时可以不覆盖；需要接入登录态、握手鉴权、open/close/heartbeat/message/send 等业务逻辑时再绑定：
+
+```php
+return [
     Dleno\CommonCore\Websocket\Contract\WsHookInterface::class
         => App\WebSocket\Hook\AppWsHook::class,
 ];
@@ -125,6 +132,8 @@ return [
 - HTTP 输出切面自动记录响应日志，并在 `API_DATA_CRYPT` 开启时加密响应体。
 - HTTP 请求初始化、语言/时区/traceId 等上下文处理。
 - 路由分发增强和请求对象替换。
+- AutoController 请求方式控制：方法级 `#[AllowMethods]` 优先，其次类级 `AutoController(defaultMethods)`、`config('app.default_allow_methods')`、默认 `['POST', 'GET']`；包含 `GET` 时自动补 `HEAD`，`OPTIONS` 预检由 `InitMiddleware` 统一处理。
+- 模块前置切面提供签名校验、请求解密和防重放钩子。`checkReplay(): bool` 默认返回 `true` 放行；业务覆盖返回 `false` 时由框架统一按签名错误处理，典型实现是在签名通过后用 `Client-Sign` 做 Redis `SET NX` 带 TTL 占位。
 
 示例：
 
@@ -316,6 +325,7 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 
 基础开关：
 
+- `APP_ENV`: 当前运行环境；存在 `.env.<APP_ENV>` 时会覆盖 `.env` 中的同名变量。
 - `ENABLE_HTTP`: 是否启用 HTTP server 相关基础中间件。
 - `ENABLE_WS`: 是否启用 WebSocket 相关进程和中间件。
 - `HTTP_INIT_MIDDLEWARE_ENABLE`: 是否自动注入 HTTP 初始化中间件，默认开启。
