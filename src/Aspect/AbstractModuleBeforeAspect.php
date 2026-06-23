@@ -182,7 +182,9 @@ abstract class AbstractModuleBeforeAspect extends AbstractAspect
                 $postRawBody .
                 get_header_val('Client-Token', '');
         $sign = md5($str);
-        if (get_header_val('Client-Sign', '') <> $sign) {
+        //hash_equals:定长时间比较，两串「长度相同且逐字节完全一致」才返回 true(语义等价于完全相等)，
+        //同时规避按首个不同字节短路带来的计时侧信道；两参数须为字符串，故对 header 值显式转 string。
+        if (!hash_equals($sign, (string) get_header_val('Client-Sign', ''))) {
             //安全:绝不记录 $str(含 signKey/Client-Token/原始 body)。仅留不可逆的 expected/provided 签名(md5)
             //与 body 摘要供排查;signKey 永不入日志。
             Logger::systemLog('SIGN')
@@ -195,5 +197,23 @@ abstract class AbstractModuleBeforeAspect extends AbstractAspect
                   );
             throw new HttpException('Error Sign', RcodeConf::ERROR_SIGN);
         }
+
+        //签名校验通过后做防重放校验(此时 Client-Nonce 已随签名校验可信)。
+        //框架默认空实现:见 checkReplay() 说明。
+        $this->checkReplay();
+    }
+
+    /**
+     * 防重放校验钩子（默认空实现，按需由业务子类覆写）。
+     *
+     * 框架不内置防重放：Client-Nonce 已参与签名、不可篡改，但「同一已签名请求在 signExpire 窗口内被原样重放」
+     * 需业务自行拦截。典型做法：用 Client-Nonce（或 Client-Sign）作 key 写 Redis、SET NX 带 TTL=signExpire，
+     * 命中即判定重放并抛 HttpException(ERROR_SIGN)。仅对非幂等接口（下单/转账/领取等）有意义，
+     * 且会给每个请求增加一次 Redis 往返，故框架默认不实现，把取舍权与依赖留给业务，保持包轻量。
+     *
+     * 调用时机：checkSign() 内、签名校验通过之后（此时可安全信任 Client-Nonce）。
+     */
+    protected function checkReplay(): void
+    {
     }
 }
