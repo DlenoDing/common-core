@@ -273,8 +273,8 @@ EOF;
      * EVALSHA 失败（脚本未缓存，如 Redis 重启/首次调用）时回退 EVAL（执行同时会缓存脚本，
      * 后续即可命中 EVALSHA）。
      *
-     * 注：Hyperf 连接池下每次命令可能落在不同连接，无法依赖 getLastError 判断 NOSCRIPT，
-     * 故以「EVALSHA 返回 false 即回退 EVAL」的方式兜底（脚本正常返回 0/1 不为 false，不会误触发）。
+     * 注：Hyperf 连接池下每次命令可能落在不同连接，getLastError 仅作诊断参考；
+     * 执行仍以「EVALSHA 返回 false 即回退 EVAL」兜底（脚本正常返回 0/1 不为 false，不会误触发）。
      *
      * @param RedisProxy $redis Redis 连接
      * @param string $script Lua 脚本
@@ -288,11 +288,94 @@ EOF;
         //务必 per-script：本类有多个脚本(unlock/续约)，若共用单槽 SHA 会用错脚本的哈希
         //去 EVALSHA，导致执行成另一脚本（如续约误跑成 unlock 删锁）。
         $sha = sha1($script);
-        $ret = $redis->evalSha($sha, $params, $numKeys);
+        try {
+            $ret = $redis->evalSha($sha, $params, $numKeys);
+        } catch (\Throwable $throwable) {
+            self::warningLuaFailure($redis, 'evalSha', $throwable);
+            throw $throwable;
+        }
+
+        $evalShaError = null;
         if ($ret === false) {
-            $ret = $redis->eval($script, $params, $numKeys);
+            $evalShaError = self::getRedisLastError($redis);
+            try {
+                $ret = $redis->eval($script, $params, $numKeys);
+            } catch (\Throwable $throwable) {
+                self::warningLuaFailure($redis, 'eval', $throwable, $evalShaError);
+                throw $throwable;
+            }
+        }
+
+        if ($ret === false) {
+            self::warningLuaFailure($redis, 'eval', null, $evalShaError, self::getRedisLastError($redis));
         }
         return $ret;
+    }
+
+    /**
+     * Lua 执行失败时输出一次关键诊断信息，便于定位 Redis 实例、版本和错误原因。
+     */
+    private static function warningLuaFailure(
+        RedisProxy $redis,
+        string $stage,
+        ?\Throwable $throwable = null,
+        ?string $evalShaError = null,
+        ?string $evalError = null
+    ): void {
+        if (self::$isWarning) {
+            return;
+        }
+
+        $poolName    = (string) config('app.dcslock_redis_pool', 'default');
+        $redisConfig = config('redis.' . $poolName, []);
+
+        $host = is_array($redisConfig) ? (string)($redisConfig['host'] ?? 'unknown') : 'unknown';
+        $port = is_array($redisConfig) ? (string)($redisConfig['port'] ?? 'unknown') : 'unknown';
+        $db   = is_array($redisConfig) ? (string)($redisConfig['db'] ?? 'unknown') : 'unknown';
+
+        $message = sprintf(
+            'DcsLock Lua failed: stage=%s; pool=%s; redis=%s:%s/%s; redis_version=%s; phpredis=%s',
+            $stage,
+            $poolName,
+            $host,
+            $port,
+            $db,
+            self::getRedisServerVersion($redis),
+            (string)(phpversion('redis') ?: 'unknown')
+        );
+
+        if ($evalShaError !== null) {
+            $message .= '; evalsha_error=' . $evalShaError;
+        }
+        if ($evalError !== null) {
+            $message .= '; eval_error=' . $evalError;
+        }
+        if ($throwable !== null) {
+            $message .= '; exception=' . get_class($throwable) . ': ' . $throwable->getMessage();
+        }
+
+        Logger::stdoutLog()->warning($message);
+        self::$isWarning = true;
+    }
+
+    private static function getRedisLastError(RedisProxy $redis): ?string
+    {
+        try {
+            $error = $redis->getLastError();
+            return is_string($error) && $error !== '' ? $error : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private static function getRedisServerVersion(RedisProxy $redis): string
+    {
+        try {
+            $info = $redis->info('server');
+            return is_array($info) ? (string)($info['redis_version'] ?? 'unknown') : 'unknown';
+        } catch (\Throwable $throwable) {
+            return 'unknown (' . get_class($throwable) . ': ' . $throwable->getMessage() . ')';
+        }
     }
 
     /**
@@ -320,7 +403,7 @@ EOF;
     {
         if (!self::$isWarning) {
             Logger::stdoutLog()
-                  ->warning('Current Redis Can\'t Execute Lua!!');
+                  ->warning('DcsLock unlock fallback is using non-atomic Redis commands because Lua execution returned false.');
             self::$isWarning = true;
         }
         //此分支为 Redis 不支持 Lua(EVAL) 时的降级兜底。以下为多条独立命令，非原子操作：
