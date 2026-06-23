@@ -302,14 +302,14 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 - `composer.json` 只 autoload `src/`，不加载 `examples/`。
 - `ConfigProvider` 只扫描 `src/`，不扫描 `examples/`。
 - 示例命名空间为 `Dleno\CommonCore\Examples\...`，不会占用业务 `App\...`。
-- AMQP Consumer、AsyncQueue Process、Process、Crontab 示例默认使用 `COMMON_CORE_EXAMPLE_ENABLE=false` 关闭。
+- AMQP Consumer 示例的 `isEnable()` 保留 `AMQP_ENABLE` 前置门禁；Crontab 示例保留 `ENABLE_CRONTAB` 前置门禁；随后都会拦截 `local` 环境并默认 `return false`，避免误扫后真实执行。
 - HTTP Controller、WS Controller、Aspect 示例刻意不直接声明 `#[AutoController]`、`#[WsController]`、`#[Aspect]`，复制到业务项目后再按注释启用。
 
 使用方式：
 
 1. 复制需要的示例到业务项目 `app/` 下对应目录。
 2. 修改 namespace，例如改成 `App\WebSocket\Bind`。
-3. 根据业务决定是否保留 `COMMON_CORE_EXAMPLE_ENABLE` 防护开关。
+3. 根据业务把 `isEnable()` 改成自己的启用条件；复制后建议保留 `AMQP_ENABLE` / `ENABLE_CRONTAB` 等功能开关和 `local` 环境强制关闭判断。
 4. 不要直接把 `vendor/dleno/common-core/examples` 加入业务注解扫描路径。
 
 ## 常用环境变量
@@ -336,10 +336,6 @@ WebSocket：
 - `WS_DEDICATED_PROCESSES`
 - `WS_DEDICATED_LIMIT`
 - `WS_DEDICATED_MAX_MESSAGES`
-
-示例保护：
-
-- `COMMON_CORE_EXAMPLE_ENABLE`: 示例进程/消费者/定时任务的额外开关，默认关闭。
 
 ## 测试与校验
 

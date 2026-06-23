@@ -54,10 +54,15 @@ class DynamicQueueConsumer extends BaseConsumer
 
     public function isEnable(): bool
     {
-        if (!env('COMMON_CORE_EXAMPLE_ENABLE', false) || !env('AMQP_ENABLE', false)) {
+        if (!env('AMQP_ENABLE', false)) {
             return false;
         }
-        return config('app_env') !== 'local';
+
+        if (config('app_env') === 'local') {
+            return false;
+        }
+
+        return false;
     }
 
     private function serverId(): string

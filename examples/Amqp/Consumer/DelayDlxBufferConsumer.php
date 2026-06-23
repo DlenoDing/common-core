@@ -8,6 +8,9 @@ use Dleno\CommonCore\Base\Amqp\BaseConsumer;
 use Hyperf\Amqp\Annotation\Consumer;
 use Hyperf\Amqp\Result;
 
+use function Hyperf\Config\config;
+use function Hyperf\Support\env;
+
 /**
  * 【延时到死信调用】延时缓冲队列「声明」示例（TTL + 死信）。
  *
@@ -56,6 +59,14 @@ class DelayDlxBufferConsumer extends BaseConsumer
      */
     public function isEnable(): bool
     {
+        if (!env('AMQP_ENABLE', false)) {
+            return false;
+        }
+
+        if (config('app_env') === 'local') {
+            return false;
+        }
+
         return false;
     }
 }

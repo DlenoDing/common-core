@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Examples\Tools;
 
-use Dleno\CommonCore\Examples\Amqp\Producer\TestProducer;
+use Dleno\CommonCore\Examples\Amqp\Producer\NormalProducer;
 use Dleno\CommonCore\Examples\AsyncQueue\Job\TestJob;
 use Dleno\CommonCore\JsonRpc\RpcMqCall;
 use Dleno\CommonCore\Tools\AsyncQueue\AsyncQueue;
@@ -63,11 +63,11 @@ class UsageExamples
 
     public static function amqpExample(array $payload): bool
     {
-        return \Dleno\CommonCore\Tools\Amqp\Producer::send(new TestProducer($payload), true);
+        return \Dleno\CommonCore\Tools\Amqp\Producer::send(new NormalProducer($payload), true);
     }
 
     public static function rpcMqExample(array $payload): bool
     {
-        return RpcMqCall::producerRpc(TestProducer::class, $payload);
+        return RpcMqCall::producerRpc(NormalProducer::class, $payload);
     }
 }

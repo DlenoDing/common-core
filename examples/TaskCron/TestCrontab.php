@@ -13,7 +13,7 @@ use function Hyperf\Support\env;
 /**
  * 定时任务示例。
  *
- * enable 指向 isEnable(),默认 COMMON_CORE_EXAMPLE_ENABLE=false,所以即使误扫到本目录也不会真实执行。
+ * enable 指向 isEnable()；即使误扫到本目录，示例任务也默认关闭，不会真实执行。
  */
 #[Crontab(name: 'CommonCoreExampleCrontab', rule: '*/5 * * * * *', callback: 'execute', enable: 'isEnable')]
 class TestCrontab
@@ -25,9 +25,14 @@ class TestCrontab
 
     public function isEnable(): bool
     {
-        if (!env('COMMON_CORE_EXAMPLE_ENABLE', false) || !env('ENABLE_CRONTAB', false)) {
+        if (!env('ENABLE_CRONTAB', false)) {
             return false;
         }
-        return config('app_env') !== 'local';
+
+        if (config('app_env') === 'local') {
+            return false;
+        }
+
+        return false;
     }
 }

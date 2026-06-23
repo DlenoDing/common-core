@@ -9,13 +9,12 @@ use Dleno\CommonCore\Tools\Server;
 use Hyperf\Process\Annotation\Process;
 
 use function Hyperf\Config\config;
-use function Hyperf\Support\env;
 
 /**
  * AsyncQueue 动态队列消费进程示例。
  *
  * 典型用途:每台服务器消费自己的队列,Job 投递时按目标 serverId 设置 queue。
- * 默认 COMMON_CORE_EXAMPLE_ENABLE=false,即使 examples 被误扫也不会启动真实消费进程。
+ * examples 目录默认不会被扫描；即使误扫到，isEnable() 也默认关闭真实消费进程。
  */
 #[Process(name: 'CommonCoreExampleDynamicQueueConsumer', nums: 1)]
 class DynamicQueueConsumer extends BaseQueueConsumer
@@ -39,10 +38,11 @@ class DynamicQueueConsumer extends BaseQueueConsumer
 
     public function isEnable($server): bool
     {
-        if (!env('COMMON_CORE_EXAMPLE_ENABLE', false)) {
+        if (config('app_env') === 'local') {
             return false;
         }
-        return config('app_env') !== 'local';
+
+        return false;
     }
 
     public static function queueName(?string $serverId = null): string

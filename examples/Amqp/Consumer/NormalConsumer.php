@@ -14,8 +14,8 @@ use function Hyperf\Support\env;
 /**
  * 【普通调用】AMQP 普通（直连）消费者示例，与 {@see \Dleno\CommonCore\Examples\Amqp\Producer\NormalProducer} 配对。
  *
- * examples 目录不在 composer autoload / 注解扫描范围内；isEnable() 默认依赖 COMMON_CORE_EXAMPLE_ENABLE=false，
- * 即使误扫到也不会启动真实消费。复制到业务项目后把 namespace 改为 App\Amqp\Consumer。
+ * examples 目录不在 composer autoload / 注解扫描范围内；即使误扫到，isEnable() 也默认关闭真实消费。
+ * 复制到业务项目后把 namespace 改为 App\Amqp\Consumer，并按业务环境改写 isEnable()。
  */
 #[Consumer(exchange: 'CommonCoreExampleNormalExchange', routingKey: 'CommonCoreExampleNormalRouting', queue: 'CommonCoreExampleNormalQueue', name: 'CommonCoreExampleNormalConsumer', nums: 1)]
 class NormalConsumer extends BaseConsumer
@@ -40,9 +40,14 @@ class NormalConsumer extends BaseConsumer
 
     public function isEnable(): bool
     {
-        if (!env('COMMON_CORE_EXAMPLE_ENABLE', false) || !env('AMQP_ENABLE', false)) {
+        if (!env('AMQP_ENABLE', false)) {
             return false;
         }
-        return config('app_env') !== 'local';
+
+        if (config('app_env') === 'local') {
+            return false;
+        }
+
+        return false;
     }
 }

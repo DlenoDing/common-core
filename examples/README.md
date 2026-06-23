@@ -7,7 +7,7 @@
 - `composer.json` 只 autoload `src/`,不加载 `examples/`。
 - `ConfigProvider` 只把 `src/` 加入注解扫描路径,不扫描 `examples/`。
 - 示例类使用 `Dleno\CommonCore\Examples\...` 命名空间,避免与业务 `App\...` 类冲突。
-- 可能被启动阶段注册的示例(AMQP Consumer、AsyncQueue Process、Process、Crontab)都额外加了 `COMMON_CORE_EXAMPLE_ENABLE` 开关,默认 `false`;即使有人误把 `examples/` 加入扫描路径,也不会拉起真实消费者/进程/定时任务。
+- 可能被启动阶段注册的示例(AMQP Consumer、AsyncQueue Process、Process、Crontab)的 `isEnable()` 均默认 `return false`;其中 AMQP Consumer 保留 `AMQP_ENABLE` 前置门禁,Crontab 保留 `ENABLE_CRONTAB` 前置门禁,并都会拦截 `local` 环境。即使有人误把 `examples/` 加入扫描路径,也不会拉起真实消费者/进程/定时任务。
 - HTTP Controller / WS Controller / Aspect 示例**刻意不直接声明** `#[AutoController]` / `#[WsController]` / `#[Aspect]`,避免误扫后注册真实路由或切面;复制到业务项目后再按注释添加。
 
 目录说明:
@@ -31,5 +31,5 @@
 
 1. 复制需要的示例到业务项目 `app/` 下对应目录。
 2. 把 namespace 改成业务项目命名空间,例如 `App\Amqp\Consumer`。
-3. 按业务环境决定是否保留 `COMMON_CORE_EXAMPLE_ENABLE` 防护开关。
+3. 按业务环境把 `isEnable()` 改成自己的启用条件;复制后建议保留 `AMQP_ENABLE` / `ENABLE_CRONTAB` 等功能开关和 `local` 环境强制关闭判断。
 4. 不要直接把 `vendor/dleno/common-core/examples` 加入业务注解扫描路径。
