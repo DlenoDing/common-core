@@ -5,7 +5,7 @@ namespace Dleno\CommonCore\Tools;
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\Context\Context;
 use Dleno\CommonCore\Tools\Server;
-use Dleno\CommonCore\Tools\Crypt\OpenSslRsa;
+use Dleno\CommonCore\Tools\Crypt\OpenSslRsa2;
 use Dleno\CommonCore\Conf\RequestConf;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -83,8 +83,9 @@ class ApiServer
         if (!Context::has(RequestConf::REQUEST_AES_KEY)) {
             $aesKey = get_header_val('Client-Key', '');
             if (!empty($aesKey)) {
-                //RSA 私钥由调用方从配置(env)取出后传入,不在 OpenSslRsa 内部读 config
-                $aesKey = OpenSslRsa::decryptByPrivateKey($aesKey, (string) config('crypt.rsa.private_key', '')); //rsa解密key
+                //RSA 私钥由调用方从配置(env)取出后传入,不在 OpenSslRsa2 内部读 config。
+                //用 OpenSslRsa2(密文 base64,非 OpenSslRsa 的 bin2hex,密文长度约减半);客户端加密 Client-Key 须对应同款。
+                $aesKey = OpenSslRsa2::decryptByPrivateKey($aesKey, (string) config('crypt.rsa.private_key', '')); //rsa解密key
             }
             Context::set(RequestConf::REQUEST_AES_KEY, $aesKey);
         }

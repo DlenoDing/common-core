@@ -283,7 +283,7 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 - `DcsLock`: Redis 分布式锁，支持等待、自动续期、Lua 解锁。
 - `HttpClient`: 协程内走 Swoole Coroutine Client，非协程内走 curl。
 - `OpenSslCrypt`: AES/DES 对称加解密。
-- `OpenSslRsa`: RSA 分块加解密。
+- `OpenSslRsa` / `OpenSslRsa2`: RSA 分块加解密。两者协议不同——`OpenSslRsa` 密文为 hex（偏长），`OpenSslRsa2` 密文为 base64（约短一半）。接口加密的 `Client-Key`（AES 密钥）解密走 `OpenSslRsa2`，客户端须使用同款算法加密。
 - `CheckVal` / `CheckParams`: 常用格式校验和参数校验。
 - `Client` / `Server`: 客户端信息、IP、设备、语言、路由、traceId 等辅助。
 - `ArrayTool`、`Strings`、`TimeTool`、`Distribution` 等工具。
