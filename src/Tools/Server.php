@@ -4,6 +4,7 @@ namespace Dleno\CommonCore\Tools;
 
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\HttpServer\Router\Dispatched;
+use Hyperf\Stringable\Str;
 use Hyperf\Context\Context;
 use Dleno\CommonCore\Conf\RequestConf;
 use Dleno\CommonCore\Conf\RpcContextConf;
@@ -68,19 +69,21 @@ class Server
                         $mca['ctrl']   = 'closureCtrl';
                         $mca['action'] = 'closureAction';
                     } else {
+                        //$callback = [控制器全类名, 方法名]。锚定 \Controller\ 取其后部分(与路由注册 getPrefix 对称，
+                        //兼容 App\Controller\… 与 App\WebSocket\Controller\… 等任意根命名空间)：
+                        //  末段 = 控制器类(去 Controller 后缀) = ctrl；其前的所有段 = module(空 / 1 级 / 多级，有序)；方法名 = action。
                         if (!is_array($callback)) {
                             $callback = [$callback];
                         }
-                        $moduleCtrl = join('\\', $callback);
-                        $moduleCtrl = str_replace('Controller\\', '\\', $moduleCtrl);
-                        $moduleCtrl = explode('\\', $moduleCtrl);
-                        unset($moduleCtrl[0]);
-                        $moduleCtrl   = array_values(array_filter($moduleCtrl));
-                        $moduleCtrlCt = count($moduleCtrl);
+                        $className = (string) ($callback[0] ?? '');
+                        $tail      = Str::after($className, '\\Controller\\'); // <module...>\<Ctrl>Controller
+                        //只过滤空段(避免 array_filter 误删 '0' 等假值段)；ctrl/action 为固定尾部
+                        $segs      = array_values(array_filter(explode('\\', $tail), static fn ($s) => $s !== ''));
+                        $ctrlClass = (string) array_pop($segs);
 
-                        $mca['module'] = array_slice($moduleCtrl, 0, $moduleCtrlCt - 2);
-                        $mca['ctrl']   = get_array_val($moduleCtrl, $moduleCtrlCt - 2);
-                        $mca['action'] = get_array_val($moduleCtrl, $moduleCtrlCt - 1);
+                        $mca['module'] = $segs; // 头部全部归 module(可空)
+                        $mca['ctrl']   = Str::replaceLast('Controller', '', $ctrlClass);
+                        $mca['action'] = (string) ($callback[1] ?? '');
                     }
                 }
             }
