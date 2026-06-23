@@ -125,16 +125,31 @@ class WsKeys
     }
 
     /**
-     * Hyperf AsyncQueue 通道的固定 5 子键(供 clearRelServerData 的 unlink 直连删除)。
+     * Hyperf AsyncQueue 通道的固定子键段(waiting/reserved/delayed/failed/timeout)——单一真相源。
+     * queueSubKeys / dedicatedQueueSubKeys 共用;以后驱动改子键只改这一处,杜绝两处不同步。
+     */
+    private const QUEUE_SUB_SEGMENTS = [':waiting', ':reserved', ':delayed', ':failed', ':timeout'];
+
+    /**
+     * 把队列 channel 拼成其在 Redis 里的固定子键(物理键)。
      * 必须与驱动写入的物理键一致：BaseDriverFactory 给 channel 包了 hash tag,
-     * 故此处也用 hashTagChannel(queueName) 拼,既命中真实键、又让 5 子键同 slot(集群下 unlink 不 CROSSSLOT)。
+     * 故此处也用 hashTagChannel 拼,既命中真实键、又让各子键同 slot(集群下 unlink 不 CROSSSLOT)。
+     * @return string[]
+     */
+    private static function subKeysOf(string $channel): array
+    {
+        $c = BaseDriverFactory::hashTagChannel($channel);
+        return array_map(static fn ($seg) => $c . $seg, self::QUEUE_SUB_SEGMENTS);
+    }
+
+    /**
+     * Hyperf AsyncQueue 通道的固定子键(供 clearRelServerData 的 unlink 直连删除)。
      * @param string $serverKey 服务器标识
      * @return string[]
      */
     public static function queueSubKeys(string $serverKey): array
     {
-        $c = BaseDriverFactory::hashTagChannel(self::queueName($serverKey));
-        return [$c . ':waiting', $c . ':reserved', $c . ':delayed', $c . ':failed', $c . ':timeout'];
+        return self::subKeysOf(self::queueName($serverKey));
     }
 
     /**
@@ -147,14 +162,13 @@ class WsKeys
     }
 
     /**
-     * 独立控制队列的固定 5 子键(同 queueSubKeys,供 clearRelServerData 下线清理直连 unlink)。
+     * 独立控制队列的固定子键(同 queueSubKeys,供 clearRelServerData 下线清理直连 unlink)。
      * @param string $serverKey 服务器标识
      * @return string[]
      */
     public static function dedicatedQueueSubKeys(string $serverKey): array
     {
-        $c = BaseDriverFactory::hashTagChannel(self::dedicatedQueueName($serverKey));
-        return [$c . ':waiting', $c . ':reserved', $c . ':delayed', $c . ':failed', $c . ':timeout'];
+        return self::subKeysOf(self::dedicatedQueueName($serverKey));
     }
 
     /**

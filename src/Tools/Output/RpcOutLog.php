@@ -17,7 +17,7 @@ class RpcOutLog
      * 输出接口日志
      * @param $result
      */
-    public static function writeLog(ProceedingJoinPoint $proceedingJoinPoint, $result, $channel = null, $group = null)
+    public static function writeLog(ProceedingJoinPoint $proceedingJoinPoint, $result, $channel = null)
     {
         if (!(new \ReflectionMethod($proceedingJoinPoint->className, $proceedingJoinPoint->methodName))->isPublic()) {
             return;
@@ -32,7 +32,7 @@ class RpcOutLog
         }
         //协程内执行
         Coroutine::create(
-            function () use ($proceedingJoinPoint, $result, $channel, $group) {
+            function () use ($proceedingJoinPoint, $result, $channel) {
                 $result = is_array($result) ? array_to_json($result) : $result;
                 //错误时输出路由对应的类和方法；正确时输出调用的类和方法
                 if (strpos(
@@ -60,7 +60,7 @@ class RpcOutLog
                 }
                 $context = get_inject_obj(\Hyperf\Rpc\Context::class)->getData();
                 $channel = $channel ?? Logger::API_CHANNEL_RESPONSE;
-                Logger::apiLog($channel, $group)
+                Logger::apiLog($channel)
                       ->info(
                           sprintf(
                               'Server::%s||Service::%s||Context::%s||Params::%s||Response::%s',

@@ -22,7 +22,7 @@ class ApiOutLog
      * 输出接口日志
      * @param $result
      */
-    public static function writeLog(ProceedingJoinPoint $proceedingJoinPoint, $result, $channel = null, $group = null)
+    public static function writeLog(ProceedingJoinPoint $proceedingJoinPoint, $result, $channel = null)
     {
         if (!(new \ReflectionMethod($proceedingJoinPoint->className, $proceedingJoinPoint->methodName))->isPublic()) {
             return;
@@ -37,7 +37,7 @@ class ApiOutLog
         }
         //协程内执行
         Coroutine::create(
-            function () use ($result, $channel, $group) {
+            function () use ($result, $channel) {
                 $result  = is_array($result) ? array_to_json($result) : $result;
                 $request = ApplicationContext::getContainer()
                                              ->get(ServerRequestInterface::class);
@@ -79,7 +79,7 @@ class ApiOutLog
 
                 $channel  = $channel ?? Logger::API_CHANNEL_RESPONSE;
                 $clientIp = Client::getIP();
-                Logger::apiLog($channel, $group)
+                Logger::apiLog($channel)
                       ->info(
                           sprintf(
                               'Server::%s||Ip::%s||Url::%s||Header::%s||Query::%s||Post::%s||Response::%s',

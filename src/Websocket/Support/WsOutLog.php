@@ -23,7 +23,7 @@ class WsOutLog
      * 输出接口日志
      * @param $result
      */
-    public static function writeLog($result, $channel = null, $group = null)
+    public static function writeLog($result, $channel = null)
     {
         if ($result instanceof ResponseInterface) {
             /** @var Response $result */
@@ -32,7 +32,7 @@ class WsOutLog
         }
         //协程内执行
         Coroutine::create(
-            function () use ($result, $channel, $group) {
+            function () use ($result, $channel) {
                 $result  = is_array($result) ? array_to_json($result) : $result;
                 $result  = str_replace(PHP_EOL, '\n', $result);
                 $result  = str_replace("\r", '', $result);
@@ -81,7 +81,7 @@ class WsOutLog
 
                 $channel  = $channel ?? Logger::API_CHANNEL_RESPONSE;
                 $clientIp = Client::getIP();
-                Logger::apiLog($channel, $group)
+                Logger::apiLog($channel)
                       ->info(
                           sprintf(
                               'Server::%s||Ip::%s||Url::%s||Header::%s||Post::%s||Response::%s',
