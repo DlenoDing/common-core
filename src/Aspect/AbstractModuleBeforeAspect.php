@@ -198,22 +198,28 @@ abstract class AbstractModuleBeforeAspect extends AbstractAspect
             throw new HttpException('Error Sign', RcodeConf::ERROR_SIGN);
         }
 
-        //签名校验通过后做防重放校验(此时 Client-Nonce 已随签名校验可信)。
-        //框架默认空实现:见 checkReplay() 说明。
-        $this->checkReplay();
+        //签名校验通过后做防重放校验(钩子)。checkReplay() 返回 false 即判定为重放，由本处统一抛错;
+        //返回 true(默认)放行。把"抛异常"收在框架侧，业务覆写只需返回判定结果，无需关心异常类型/错误码。
+        if (!$this->checkReplay()) {
+            throw new HttpException('Error Sign', RcodeConf::ERROR_SIGN);
+        }
     }
 
     /**
-     * 防重放校验钩子（默认空实现，按需由业务子类覆写）。
+     * 防重放校验钩子（默认 return true 放行，按需由业务子类覆写）。
      *
-     * 框架不内置防重放：Client-Nonce 已参与签名、不可篡改，但「同一已签名请求在 signExpire 窗口内被原样重放」
-     * 需业务自行拦截。典型做法：用 Client-Nonce（或 Client-Sign）作 key 写 Redis、SET NX 带 TTL=signExpire，
-     * 命中即判定重放并抛 HttpException(ERROR_SIGN)。仅对非幂等接口（下单/转账/领取等）有意义，
-     * 且会给每个请求增加一次 Redis 往返，故框架默认不实现，把取舍权与依赖留给业务，保持包轻量。
+     * 返回值约定：true = 放行（非重放）；false = 判定为重放 → 由 checkSign() 统一抛 HttpException(ERROR_SIGN)。
+     * 抛错收在框架侧，业务覆写只需返回判定结果，不必关心异常类型与错误码。
      *
-     * 调用时机：checkSign() 内、签名校验通过之后（此时可安全信任 Client-Nonce）。
+     * 框架不内置防重放：Client-Nonce/Client-Sign 已参与签名、不可篡改，但「同一已签名请求在 signExpire 窗口内
+     * 被原样重放」需业务自行拦截。典型做法：用 Client-Sign 作 key 写 Redis、SET NX 带 TTL，占位失败即返回 false。
+     * 仅对非幂等接口（下单/转账/领取等）有意义，且每个签名请求多一次 Redis 往返，故框架默认放行，
+     * 把取舍权与依赖留给业务，保持包轻量。
+     *
+     * 调用时机：checkSign() 内、签名校验通过之后（此时可安全信任 Client-Nonce/Client-Sign）。
      */
-    protected function checkReplay(): void
+    protected function checkReplay(): bool
     {
+        return true;
     }
 }
