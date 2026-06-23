@@ -43,7 +43,8 @@ class InitMiddleware implements MiddlewareInterface
         $allowHeaders = config('app.ac_allow_headers') ?? [
             "Content-Type",//请求内容类型
         ];
-        $allowMethods = config('app.ac_allow_methods') ?? ['POST', 'GET', 'HEAD'];
+        //Access-Control-Allow-Methods 返回【该路径实际允许的请求方式】(查路由表)，而非静态全局配置。
+        $allowMethods = $this->resolveAllowedMethods($request);
         $response     = $response
             ->withHeader('Server', config('app_name', 'MyServer'))
             // 设置返回数据格式及编码
@@ -117,6 +118,32 @@ class InitMiddleware implements MiddlewareInterface
         if (get_post_val('perPage')) {
             rpc_context_set(RpcContextConf::PER_PAGE, (int)get_post_val('perPage'));//每页记录数
         }
+    }
+
+    /**
+     * 返回当前请求路径【实际允许的请求方式】，供 CORS Access-Control-Allow-Methods 头返回真实值。
+     * 做法：用一个未注册的探针方法分发该路径——路径存在则 FastRoute 返回 METHOD_NOT_ALLOWED 并带回该路径
+     * 已注册的全部方法（含框架为 GET 自动补的 HEAD）；路径未命中 / 异常 → 回退
+     * config('app.default_allow_methods') → ['POST','GET']。
+     * @return string[]
+     */
+    private function resolveAllowedMethods(ServerRequestInterface $request): array
+    {
+        try {
+            $path       = $request->getUri()->getPath();
+            $dispatcher = get_inject_obj(\Hyperf\HttpServer\Router\DispatcherFactory::class)->getDispatcher('http');
+            $res        = $dispatcher->dispatch('__CORS_ALLOW_PROBE__', $path);
+            if (($res[0] ?? null) === \FastRoute\Dispatcher::METHOD_NOT_ALLOWED && !empty($res[1]) && is_array($res[1])) {
+                return array_values(array_unique(array_map('strtoupper', $res[1])));
+            }
+        } catch (\Throwable $e) {
+            //查路由失败不影响请求，回退默认
+        }
+        $def = config('app.default_allow_methods');
+        if (!is_array($def) || $def === []) {
+            $def = ['POST', 'GET'];
+        }
+        return array_values(array_unique(array_map(fn ($m) => strtoupper(trim((string) $m)), $def)));
     }
 
     /**

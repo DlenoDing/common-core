@@ -17,6 +17,7 @@ use Hyperf\HttpServer\Annotation\RequestMapping;
 use Hyperf\HttpServer\Router\DispatcherFactory;
 use Hyperf\Collection\Arr;
 use Hyperf\Stringable\Str;
+use Dleno\CommonCore\Annotation\AllowMethods;
 use ReflectionMethod;
 
 use function Hyperf\Config\config;
@@ -74,7 +75,8 @@ class RouterDispatcherFactory extends DispatcherFactory
         $prefix  = $this->getPrefix($className, $annotation->prefix);
         $router  = $this->getRouter($annotation->server);
 
-        $autoMethods   = config('app.ac_allow_methods') ?? ['POST', 'GET', 'HEAD'];
+        //类级默认请求方式(Hyperf AutoController(defaultMethods)，未设为 null)；逐方法在 resolveMethods 里按优先级解析。
+        $classDefault  = $annotation->defaultMethods;
         $defaultAction = '/index';
         foreach ($methods as $method) {
             $options    = $annotation->options;
@@ -83,6 +85,9 @@ class RouterDispatcherFactory extends DispatcherFactory
             if (substr($methodName, 0, 2) === '__') {
                 continue;
             }
+
+            //本方法允许的请求方式:方法 #[AllowMethods] → 类 defaultMethods → config → 默认；含 GET 自动补 HEAD。
+            $routeMethods = $this->resolveMethods($method, $classDefault);
 
             $methodMiddlewares = $middlewares;
             // Handle method level middlewares.
@@ -98,13 +103,76 @@ class RouterDispatcherFactory extends DispatcherFactory
 
             $path = $this->formatRoutePath($path);
 
-            $router->addRoute($autoMethods, $path, [$className, $methodName], $options);
+            $router->addRoute($routeMethods, $path, [$className, $methodName], $options);
 
             if (Str::endsWith($path, $defaultAction)) {
                 $path = Str::replaceLast($defaultAction, '', $path);
-                $router->addRoute($autoMethods, $path, [$className, $methodName], $options);
+                $router->addRoute($routeMethods, $path, [$className, $methodName], $options);
             }
         }
+    }
+
+    /**
+     * 解析某方法实际允许的 HTTP 请求方式。优先级(每级「为空」——null/空串/空数组/全空白——则继续回退)：
+     *   ① 方法级 #[AllowMethods]  ② 类级 AutoController(defaultMethods)
+     *   ③ config('app.default_allow_methods')  ④ ['POST','GET']
+     * 解析结果含 GET 时自动补 HEAD(HEAD=无体 GET)。OPTIONS 预检由 InitMiddleware 全局处理，不在此注册。
+     *
+     * @param mixed $classDefault 类级 defaultMethods(数组/字符串/null)
+     * @return string[]
+     */
+    protected function resolveMethods(ReflectionMethod $method, $classDefault): array
+    {
+        $candidates = [
+            $this->methodAllowMethods($method),
+            $classDefault,
+            config('app.default_allow_methods'),
+        ];
+        $resolved = ['POST', 'GET'];
+        foreach ($candidates as $cand) {
+            $n = $this->normalizeMethods($cand);
+            if ($n !== []) {
+                $resolved = $n;
+                break;
+            }
+        }
+        if (in_array('GET', $resolved, true) && !in_array('HEAD', $resolved, true)) {
+            $resolved[] = 'HEAD';
+        }
+        return $resolved;
+    }
+
+    /**
+     * 读取方法上的 #[AllowMethods] 声明值(数组/字符串)；无则返回 null。
+     * @return mixed
+     */
+    protected function methodAllowMethods(ReflectionMethod $method)
+    {
+        $attrs = $method->getAttributes(AllowMethods::class);
+        return $attrs ? $attrs[0]->newInstance()->methods : null;
+    }
+
+    /**
+     * 归一为「大写、去重、非空」的方法名数组；null/空串/空数组/全空白 → []；字符串支持逗号分隔。
+     * @param mixed $val
+     * @return string[]
+     */
+    protected function normalizeMethods($val): array
+    {
+        if (is_string($val)) {
+            $val = trim($val) === '' ? [] : preg_split('/\s*,\s*/', trim($val), -1, PREG_SPLIT_NO_EMPTY);
+        }
+        if (!is_array($val)) {
+            return [];
+        }
+        $out = [];
+        foreach ($val as $m) {
+            $m = strtoupper(trim((string) $m));
+            if ($m !== '') {
+                $out[] = $m;
+            }
+        }
+        return array_values(array_unique($out));
     }
 
     /**
