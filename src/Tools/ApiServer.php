@@ -60,10 +60,13 @@ class ApiServer
             $macArr[]  = get_array_val($mca, 'ctrl', '');
             $macArr[]  = get_array_val($mca, 'action', '');
             $whiteList = config('mca_white_list', []);
+            //大小写不敏感比对:白名单键(module/class/function 各段)统一转小写,
+            //避免配置与路由解析大小写不一致导致漏匹配。array_change_key_case 处理整段点号键。
+            $whiteList = array_change_key_case($whiteList, CASE_LOWER);
             $routerNum = count($macArr);
             for ($i = $routerNum; $i > 0; $i--) {
                 $checkMca = array_slice($macArr, 0, $i);
-                $checkMca = join('.', $checkMca);
+                $checkMca = strtolower(join('.', $checkMca));
                 if (isset($whiteList[$checkMca])) {
                     $val = $whiteList[$checkMca];
                     break;

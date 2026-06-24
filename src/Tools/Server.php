@@ -102,7 +102,9 @@ class Server
             $traceId = get_header_val('Trace-Id');
             if (empty($traceId)) {
                 $traceId = rpc_context_get(RpcContextConf::TRACE_ID);
-                $traceId = $traceId ?? (Context::get(RequestConf::REQUEST_RUN_START) ?? microtime(true)) . '.' .
+                //microtime 小数位固定 4 位(不足尾部补 0,sprintf 同时避免 number_format 的千分位逗号),
+                //保证 traceId 前缀长度一致、不因浮点字符串化的可变精度而长短不一。
+                $traceId = $traceId ?? sprintf('%.4f', Context::get(RequestConf::REQUEST_RUN_START) ?? microtime(true)) . '.' .
                                        random_int(1000000, 9999999);//CSPRNG:不可预测、降低碰撞(格式不变)
             }
             Context::set(RequestConf::REQUEST_TRACE_ID, $traceId);
