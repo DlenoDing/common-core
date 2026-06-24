@@ -14,6 +14,10 @@ return [
     \Hyperf\HttpServer\Contract\RequestInterface::class
         => \Dleno\CommonCore\Core\Request\Request::class,
 
+    // HTTP 模块前置中间件绑定:复制 Middleware/AppModuleBeforeMiddleware 到业务 app 后替换右侧类名。
+    \Dleno\CommonCore\Middleware\Http\AbstractModuleBeforeMiddleware::class
+        => \Dleno\CommonCore\Examples\Middleware\AppModuleBeforeMiddleware::class,
+
     // WS 业务策略/钩子绑定:右侧换成业务 app 下复制出的实现。
     \Dleno\CommonCore\Websocket\Contract\WsBindStrategyInterface::class
         => \Dleno\CommonCore\Examples\WebSocket\Bind\DefaultWsBindStrategy::class,

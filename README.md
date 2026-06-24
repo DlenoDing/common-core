@@ -56,6 +56,25 @@ return [
 
 `CoreMiddleware` 和 `DispatcherFactory` 已由 common-core 的 `ConfigProvider` 注入，通常不需要业务项目重复绑定。
 
+### HTTP 模块前置中间件绑定
+
+common-core 会在 HTTP `InitMiddleware` 之后自动注册 `AbstractModuleBeforeMiddleware`，并默认绑定到包内 `DefaultModuleBeforeMiddleware`。默认实现会按 `config('app.api_check_sign')` / `config('app.api_data_crypt')` 执行签名校验和请求解密，`checkAuth()` 为 no-op，`checkReplay()` 返回 `true` 放行。
+
+业务需要登录校验、防重放或自定义签名参数时，推荐继承 `DefaultModuleBeforeMiddleware`，只覆写需要的钩子，并在业务项目 `config/autoload/dependencies.php` 中覆盖抽象基类绑定：
+
+```php
+return [
+    Dleno\CommonCore\Middleware\Http\AbstractModuleBeforeMiddleware::class
+        => App\Middleware\AppModuleBeforeMiddleware::class,
+];
+```
+
+如未覆盖该绑定，会使用包内默认实现：签名/解密仍按配置开关执行，但不会做业务登录校验或防重放拦截。
+
+参考实现见：
+
+- `examples/Middleware/AppModuleBeforeMiddleware.php`
+
 ### 异常处理器配置
 
 异常处理链顺序敏感，`DefaultExceptionHandler` 会兜底并终止后续传播。因此 common-core 不通过 `ConfigProvider` 自动注入 `exceptions.handler`，而是提供 `ExceptionHandlerConfig` 让业务项目在 `config/autoload/exceptions.php` 中显式生成默认链，并保留业务 handler 的插入位置：
@@ -133,12 +152,12 @@ return [
 - HTTP 请求初始化、语言/时区/traceId 等上下文处理。
 - 路由分发增强和请求对象替换。
 - AutoController 请求方式控制：方法级 `#[AllowMethods]` 优先，其次类级 `AutoController(defaultMethods)`、`config('app.default_allow_methods')`、默认 `['POST', 'GET']`；包含 `GET` 时自动补 `HEAD`，`OPTIONS` 预检由 `InitMiddleware` 统一处理。
-- 模块前置中间件提供签名校验、请求解密和登录/防重放钩子。抽象基类 `AbstractModuleBeforeMiddleware` 封装流程，由 `ConfigProvider` 在 `InitMiddleware` 之后、复用同一 `HTTP_INIT_MIDDLEWARE_ENABLE` 开关注册其类名，并默认绑定到包内具体实现 `DefaultModuleBeforeMiddleware`（`checkAuth` 为 no-op）。作为全局中间件运行于「路由分发之后、控制器之前」（Hyperf 在中间件管线前已完成分发并写入 `Dispatched`）：仅对已命中路由（`FOUND`）经 `Server::getRouteMca()` 取权威路由做签名/解密/鉴权；非 `FOUND`（`NOT_FOUND` / `METHOD_NOT_ALLOWED`）直接放行，由管线末端 `CoreMiddleware` 返 404 / 405。业务侧继承 `AbstractModuleBeforeMiddleware` 覆写钩子，并在 `dependencies.php` 把抽象基类绑定到自己的子类即接管。`checkAuth($request)` 默认 no-op，仅在「未命中 TOKEN 白名单且非（非正式环境 debug）」时由基类调用，`$request` 为解密后的请求；`checkReplay(): bool` 默认返回 `true` 放行，业务覆盖返回 `false` 时由框架统一按签名错误处理，典型实现是在签名通过后用 `Client-Sign` 做 Redis `SET NX` 带 TTL 占位。
+- 模块前置中间件提供签名校验、请求解密、登录校验和防重放钩子。`AbstractModuleBeforeMiddleware` 封装流程，`DefaultModuleBeforeMiddleware` 提供默认钩子实现，业务通常继承默认实现后在 `dependencies.php` 绑定抽象基类来接管。该中间件只处理已命中路由（`FOUND`）；`NOT_FOUND` / `METHOD_NOT_ALLOWED` 会放行给管线末端 `CoreMiddleware` 返回 404 / 405，避免未知路由被误判为签名错误。
 
 示例：
 
 - `examples/Http`
-- `examples/Aspect`
+- `examples/Middleware`
 - `examples/Config`
 
 ### 异常与输出
@@ -158,6 +177,7 @@ return [
 - API/RPC/Error 输出日志封装。
 - HTTP/WS Controller 响应日志切面。
 - 按渠道输出 stdout、system、api、sql、business 日志。
+- 错误输出可读取业务 `config/autoload/dingtalk.php` 的 `dingtalk.trace` 配置发送异常追踪通知。
 
 ### Model 与数据库
 
@@ -312,7 +332,7 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 - `ConfigProvider` 只扫描 `src/`，不扫描 `examples/`。
 - 示例命名空间为 `Dleno\CommonCore\Examples\...`，不会占用业务 `App\...`。
 - AMQP Consumer 示例的 `isEnable()` 保留 `AMQP_ENABLE` 前置门禁；Crontab 示例保留 `ENABLE_CRONTAB` 前置门禁；随后都会拦截 `local` 环境并默认 `return false`，避免误扫后真实执行。
-- HTTP Controller、WS Controller、Aspect 示例刻意不直接声明 `#[AutoController]`、`#[WsController]`、`#[Aspect]`，复制到业务项目后再按注释启用。
+- HTTP Controller、WS Controller 示例刻意不直接声明 `#[AutoController]`、`#[WsController]`，复制到业务项目后再按注释启用。
 
 使用方式：
 
@@ -325,16 +345,20 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 
 基础开关：
 
+- `APP_NAME`: 应用名，Redis key 前缀等通用配置会使用。
 - `APP_ENV`: 当前运行环境；存在 `.env.<APP_ENV>` 时会覆盖 `.env` 中的同名变量。
+- `IS_PROD`: 强制判定为正式环境；未设置时 `config('app_env') === 'prod'` 也会视为正式环境。
 - `ENABLE_HTTP`: 是否启用 HTTP server 相关基础中间件。
 - `ENABLE_WS`: 是否启用 WebSocket 相关进程和中间件。
-- `HTTP_INIT_MIDDLEWARE_ENABLE`: 是否自动注入 HTTP 初始化中间件，默认开启。
+- `HTTP_INIT_MIDDLEWARE_ENABLE`: 是否自动注入 HTTP 初始化中间件和模块前置中间件，默认开启。
 - `WS_AUTH_MIDDLEWARE_ENABLE`: 是否自动注入 WS 鉴权中间件，默认开启。
+- `LOG_MAX_FILES`: 默认日志文件保留数量。
 
 WebSocket：
 
 - `WS_KEY_PREFIX`
 - `WS_LOCAL_ENABLE`
+- `WEBSOCKET_COMPRESSION`
 - `WS_SERVER_SET_CACHE_MS`
 - `WS_PRESENCE_BUCKET_NUM`
 - `WS_REALTIME_ONLINE_MAX`
@@ -346,6 +370,31 @@ WebSocket：
 - `WS_DEDICATED_PROCESSES`
 - `WS_DEDICATED_LIMIT`
 - `WS_DEDICATED_MAX_MESSAGES`
+
+连接池与外部服务：
+
+- `DB_HOST`
+- `DB_MIN_CONNECTION` / `DB_MAX_CONNECTION`
+- `DB_CONNECT_TIMEOUT` / `DB_WAIT_TIMEOUT`
+- `DB_HEARTBEAT` / `DB_MAX_IDLE_TIME`
+- `DB_READ_HOST` / `DB_WRITE_HOST`
+- `DB_READ_MIN_CONNECTION` / `DB_READ_MAX_CONNECTION`
+- `DB_READ_CONNECT_TIMEOUT` / `DB_READ_WAIT_TIMEOUT`
+- `DB_READ_HEARTBEAT` / `DB_READ_MAX_IDLE_TIME`
+- `DB_WRITE_MIN_CONNECTION` / `DB_WRITE_MAX_CONNECTION`
+- `DB_WRITE_CONNECT_TIMEOUT` / `DB_WRITE_WAIT_TIMEOUT`
+- `DB_WRITE_HEARTBEAT` / `DB_WRITE_MAX_IDLE_TIME`
+- `REDIS_MIN_CONNECTION` / `REDIS_MAX_CONNECTION`
+- `REDIS_CONNECT_TIMEOUT` / `REDIS_WAIT_TIMEOUT`
+- `REDIS_HEARTBEAT` / `REDIS_MAX_IDLE_TIME`
+- `AMQP_CONNECTION` / `AMQP_MIN_CONNECTION` / `AMQP_MAX_CONNECTION`
+- `AMQP_CONNECT_TIMEOUT` / `AMQP_WAIT_TIMEOUT`
+- `AMQP_READ_WRITE_TIMEOUT` / `AMQP_HEARTBEAT`
+- `AMQP_MAX_IDLE_CHANNELS`
+- `CONSUL_SERVER_URI`
+- `RPC_CONNECT_TIMEOUT` / `RPC_RECV_TIMEOUT`
+- `RPC_MIN_CONNECTION` / `RPC_MAX_CONNECTION`
+- `RPC_WAIT_TIMEOUT` / `RPC_HEARTBEAT` / `RPC_MAX_IDLE_TIME`
 
 ## 测试与校验
 
