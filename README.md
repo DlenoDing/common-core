@@ -133,7 +133,7 @@ return [
 - HTTP 请求初始化、语言/时区/traceId 等上下文处理。
 - 路由分发增强和请求对象替换。
 - AutoController 请求方式控制：方法级 `#[AllowMethods]` 优先，其次类级 `AutoController(defaultMethods)`、`config('app.default_allow_methods')`、默认 `['POST', 'GET']`；包含 `GET` 时自动补 `HEAD`，`OPTIONS` 预检由 `InitMiddleware` 统一处理。
-- 模块前置切面提供签名校验、请求解密和防重放钩子。`checkReplay(): bool` 默认返回 `true` 放行；业务覆盖返回 `false` 时由框架统一按签名错误处理，典型实现是在签名通过后用 `Client-Sign` 做 Redis `SET NX` 带 TTL 占位。
+- 模块前置中间件提供签名校验、请求解密和登录/防重放钩子。抽象基类 `AbstractModuleBeforeMiddleware` 封装流程，由 `ConfigProvider` 在 `InitMiddleware` 之后、复用同一 `HTTP_INIT_MIDDLEWARE_ENABLE` 开关注册其类名，并默认绑定到包内具体实现 `DefaultModuleBeforeMiddleware`（`checkAuth` 为 no-op）。作为全局中间件运行于「路由分发之后、控制器之前」（Hyperf 在中间件管线前已完成分发并写入 `Dispatched`）：仅对已命中路由（`FOUND`）经 `Server::getRouteMca()` 取权威路由做签名/解密/鉴权；非 `FOUND`（`NOT_FOUND` / `METHOD_NOT_ALLOWED`）直接放行，由管线末端 `CoreMiddleware` 返 404 / 405。业务侧继承 `AbstractModuleBeforeMiddleware` 覆写钩子，并在 `dependencies.php` 把抽象基类绑定到自己的子类即接管。`checkAuth($request)` 默认 no-op，仅在「未命中 TOKEN 白名单且非（非正式环境 debug）」时由基类调用，`$request` 为解密后的请求；`checkReplay(): bool` 默认返回 `true` 放行，业务覆盖返回 `false` 时由框架统一按签名错误处理，典型实现是在签名通过后用 `Client-Sign` 做 Redis `SET NX` 带 TTL 占位。
 
 示例：
 

@@ -30,6 +30,8 @@ use Dleno\CommonCore\Model\ModelUpdateVisitor;
 use Dleno\CommonCore\Signal\ProcessStopHandler;
 use Dleno\CommonCore\Websocket\Contract\WsHookInterface;
 use Dleno\CommonCore\Websocket\Hook\AbstractWsHook;
+use Dleno\CommonCore\Middleware\Http\AbstractModuleBeforeMiddleware;
+use Dleno\CommonCore\Middleware\Http\DefaultModuleBeforeMiddleware;
 use Dleno\CommonCore\Middleware\Http\InitMiddleware;
 use Dleno\CommonCore\Websocket\Server\WebSocketAuthMiddleware;
 use Dleno\CommonCore\Middleware\Http\CoreMiddleware as HttpCoreMiddleware;
@@ -75,6 +77,10 @@ class ConfigProvider
                 //WsBindStrategyInterface 无包内默认，业务必须在 app dependencies.php 绑定
                 //（绑定策略默认实现已下放业务端：App\WebSocket\Bind\DefaultWsBindStrategy）。
                 WsHookInterface::class => AbstractWsHook::class,
+
+                //模块前置中间件默认实现：autoMiddlewares 注册的是抽象基类 AbstractModuleBeforeMiddleware，
+                //此处给出包内默认具体实现（checkAuth no-op）。业务在 app dependencies.php 把抽象类绑到自己的子类即接管。
+                AbstractModuleBeforeMiddleware::class => DefaultModuleBeforeMiddleware::class,
             ],
             //安装时自动发布的配置模板(vendor:publish);destination 已存在则不覆盖,业务可自由修改。
             'publish'      => [
@@ -163,9 +169,13 @@ class ConfigProvider
     private function autoMiddlewares(): array
     {
         $middlewares = [];
-        //HTTP 初始化中间件（env HTTP_INIT_MIDDLEWARE_ENABLE，默认开）
+        //HTTP 初始化中间件（env HTTP_INIT_MIDDLEWARE_ENABLE，默认开）；
+        //紧随其后注入模块前置中间件（签名校验/数据解密/登录校验），复用同一开关、排在 InitMiddleware 之后
+        //（依赖其写入的时区/解析体/RPC 上下文等）。默认走 AbstractModuleBeforeMiddleware（no-op 鉴权、安全放行）；
+        //业务在 app dependencies.php 把 AbstractModuleBeforeMiddleware 绑到自己的子类即覆盖。
         if (env('ENABLE_HTTP', false) && env('HTTP_INIT_MIDDLEWARE_ENABLE', true)) {
             $middlewares['http'][] = InitMiddleware::class;
+            $middlewares['http'][] = AbstractModuleBeforeMiddleware::class;
         }
         //WS 握手鉴权中间件（env WS_AUTH_MIDDLEWARE_ENABLE，默认开）
         if (env('ENABLE_WS', false) && env('WS_AUTH_MIDDLEWARE_ENABLE', true)) {
