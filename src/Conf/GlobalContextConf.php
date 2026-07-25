@@ -28,6 +28,8 @@ class GlobalContextConf
         RequestConf::OUTPUT_NOT_FORMAT,
         RequestConf::OUTPUT_HTML,
         RequestConf::OUTPUT_NO_LOG,
+        RequestConf::OUTPUT_TIME_CONVERSION_IGNORE_FIELDS,
+        RequestConf::LOGGER_NO_SQL,
         //随 ApiServer 下沉的请求上下文(原 app ApiRequestConf)
         RequestConf::REQUEST_ADMIN_MODULE,
         RequestConf::REQUEST_ROUTE_VAL,

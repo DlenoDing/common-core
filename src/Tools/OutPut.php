@@ -96,18 +96,19 @@ class OutPut
      * @param array|object $data
      * @return array
      * */
-    private static function formatData($data)
+    private static function formatData($data, ?array $timeConversionIgnoreFields = null)
     {
         //不自动转换数据
         if (Context::get(RequestConf::OUTPUT_NOT_FORMAT, false)) {
             return $data;
         }
+        $timeConversionIgnoreFields ??= self::getTimeConversionIgnoreFields();
         $tmp = [];
         foreach ($data as $key => $val) {
             $key = $key . '';//key做字符串处理
             if (is_array($val) || is_object($val)) {
                 if (!empty((array)$val)) {
-                    $val = self::formatData($val);
+                    $val = self::formatData($val, $timeConversionIgnoreFields);
                 }
             } else {
                 //返回数据做字符串处理
@@ -120,7 +121,8 @@ class OutPut
                 //(否则它们值为空时会被下面 empty→'0' 那条误改)。再叠加内容闸 CheckVal::isDateTime(完整 Y-m-d H:i:s)双保险:
                 //名字匹配但值非完整日期时间(如 created_at 实为空)走 empty→'0'，其余非日期时间值原样不动。
                 $lkey = strtolower($key);
-                if (strpos($lkey, 'time') !== false || preg_match('/(_at|[a-z]At)$/', $key)) {
+                if (!isset($timeConversionIgnoreFields[self::normalizeOutputFieldName($key)])
+                    && (strpos($lkey, 'time') !== false || preg_match('/(_at|[a-z]At)$/', $key))) {
                     if (CheckVal::isDateTime($val)) {
                         $val = strtotime($val).'';
                     } elseif ($val == GlobalConf::DEFAULT_DATE_TIME || empty($val)) {
@@ -146,5 +148,41 @@ class OutPut
         }
         unset($data);
         return $tmp;
+    }
+
+    private static function getTimeConversionIgnoreFields(): array
+    {
+        $fields = Context::get(RequestConf::OUTPUT_TIME_CONVERSION_IGNORE_FIELDS, []);
+        if (is_string($fields)) {
+            $fields = explode(',', $fields);
+        }
+        if (!is_array($fields)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($fields as $field => $enabled) {
+            $candidate = $enabled;
+            if (is_string($field)) {
+                if (!$enabled) {
+                    continue;
+                }
+                $candidate = $field;
+            }
+            if (!is_scalar($candidate)) {
+                continue;
+            }
+            $candidate = trim((string)$candidate);
+            if ($candidate === '') {
+                continue;
+            }
+            $normalized[self::normalizeOutputFieldName($candidate)] = true;
+        }
+        return $normalized;
+    }
+
+    private static function normalizeOutputFieldName(string $field): string
+    {
+        return strtolower(str_replace('_', '', $field));
     }
 }

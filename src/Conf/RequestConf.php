@@ -27,8 +27,14 @@ class RequestConf
     const OUTPUT_HTML = '__OUTPUT_HTML__';
     //不记录api正常输出日志
     const OUTPUT_NO_LOG = '__OUTPUT_NO_LOG__';
+    //输出时间字段转换忽略列表
+    const OUTPUT_TIME_CONVERSION_IGNORE_FIELDS = '__OUTPUT_TIME_CONVERSION_IGNORE_FIELDS__';
 
+    //SQL日志模式:null=走全局配置;0=全部记录;1=不记录;2=只记录慢日志
     const LOGGER_NO_SQL = '__LOGGER_NO_SQL__';
+    const LOGGER_SQL_MODE_ALL = 0;
+    const LOGGER_SQL_MODE_NONE = 1;
+    const LOGGER_SQL_MODE_SLOW_ONLY = 2;
 
     //请求是否admin模块
     const REQUEST_ADMIN_MODULE = '__ADMIN_MODULE__';
