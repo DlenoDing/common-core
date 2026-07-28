@@ -76,7 +76,7 @@ class OutPut
             $code = RcodeConf::SUCCESS;
         }
 
-        //data数据转换 - 数字转为字符串；null值转为空;bool数据转0|1
+        //data数据转换 - 数字转为字符串；null保持null;bool数据转"1"|"0"
         $data = $data ? self::formatData($data) : (object)array();
 
         $res = array(
@@ -92,11 +92,11 @@ class OutPut
     }
 
     /**
-     * 格式化返回数据字段Key(驼峰)+Value(字符串类型的值、自动转换时间)
+     * 格式化返回数据字段Key(驼峰)+Value(数字/布尔字符串化、null保持、自动转换时间)
      * @param array|object $data
      * @return array
      * */
-    private static function formatData($data, ?array $timeConversionIgnoreFields = null)
+    public static function formatData($data, ?array $timeConversionIgnoreFields = null)
     {
         //不自动转换数据
         if (Context::get(RequestConf::OUTPUT_NOT_FORMAT, false)) {
@@ -111,26 +111,30 @@ class OutPut
                     $val = self::formatData($val, $timeConversionIgnoreFields);
                 }
             } else {
-                //返回数据做字符串处理
-                $val = is_numeric($val) ? "{$val}" : $val;
-                $val = is_null($val) ? "" : $val;
-                $val = is_bool($val) ? ($val ? 1 : 0) : $val;
-                //时间字段统一转时间戳:字段名含 time、或时间戳约定后缀——
-                //  snake 的 `_at`(created_at) 或 camel 的 `xAt`(createdAt,业务可能直接返回无下划线小驼峰)。
-                //用"小写字母+At"识别 camel,避免 format/seat/lat 这类纯小写 at 结尾、也无大写 A/下划线的字段被误命中
-                //(否则它们值为空时会被下面 empty→'0' 那条误改)。再叠加内容闸 CheckVal::isDateTime(完整 Y-m-d H:i:s)双保险:
-                //名字匹配但值非完整日期时间(如 created_at 实为空)走 empty→'0'，其余非日期时间值原样不动。
-                $lkey = strtolower($key);
-                if (!isset($timeConversionIgnoreFields[self::normalizeOutputFieldName($key)])
-                    && (strpos($lkey, 'time') !== false || preg_match('/(_at|[a-z]At)$/', $key))) {
-                    if (CheckVal::isDateTime($val)) {
-                        $val = strtotime($val).'';
-                    } elseif ($val == GlobalConf::DEFAULT_DATE_TIME || empty($val)) {
-                        $val = '0';
+                if (is_null($val)) {
+                    $val = null;
+                } else {
+                    //返回数据做字符串处理：数字转字符串，bool 转 "1"/"0"，避免端侧类型漂移
+                    if (is_bool($val)) {
+                        $val = $val ? '1' : '0';
+                    } elseif (is_numeric($val)) {
+                        $val = "{$val}";
+                    }
+                    //时间字段统一转时间戳:字段名含 time、或时间戳约定后缀——
+                    //  snake 的 `_at`(created_at) 或 camel 的 `xAt`(createdAt,业务可能直接返回无下划线小驼峰)。
+                    //用"小写字母+At"识别 camel,避免 format/seat/lat 这类纯小写 at 结尾、也无大写 A/下划线的字段被误命中
+                    //(否则它们值为空时会被下面 empty→'0' 那条误改)。再叠加内容闸 CheckVal::isDateTime(完整 Y-m-d H:i:s)双保险:
+                    //名字匹配但值非完整日期时间(如 created_at 实为空)走 empty→'0'，其余非日期时间值原样不动。
+                    $lkey = strtolower($key);
+                    if (!isset($timeConversionIgnoreFields[self::normalizeOutputFieldName($key)])
+                        && (strpos($lkey, 'time') !== false || preg_match('/(_at|[a-z]At)$/', $key))) {
+                        if (CheckVal::isDateTime($val)) {
+                            $val = strtotime($val).'';
+                        } elseif ($val == GlobalConf::DEFAULT_DATE_TIME || empty($val)) {
+                            $val = '0';
+                        }
                     }
                 }
-
-                $val = htmlspecialchars_decode($val, ENT_QUOTES);
             }
             //统一转换为驼峰格式的KEY命名(纯函数结果按 key 进程级缓存,列表场景同名字段大量复用,避免重复字符串运算)
             //仅缓存非数字键且限上限:列表索引/ID 映射键无复用价值,否则会撑爆缓存(长驻 worker 内存泄漏)
