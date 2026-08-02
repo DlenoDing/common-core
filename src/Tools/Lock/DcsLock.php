@@ -17,9 +17,15 @@ class DcsLock
 
     private static $unlock = [];
 
+    //自动续期 Timer ID 映射。主动解锁时同步 clear，避免长 TTL 锁留下无效 Timer。
+    private static $renewalTimers = [];
+
     //续约 expire 瞬时失败的重试间隔(毫秒)。远小于续约安全缓冲(恒 ~2s)，
     //以便在锁 TTL 到期前的窗口内多次重试，抢在过期前续上。
     private const RENEWAL_RETRY_MS = 500;
+
+    //自动续期最小锁持有时间(秒)。默认 3 秒短锁不续期，5 秒及以上才进入续期链路。
+    private const RENEWAL_MIN_TIME = 5;
 
     //是否支持浮点阻塞超时（进程级缓存：Redis 6.0+ 服务端 + phpredis 5.3.0+ 客户端）
     private static ?bool $floatTimeout = null;
@@ -66,8 +72,8 @@ class DcsLock
             $result = $result();
         }
         if ($result) {
-            //自动续期(所持有时间10秒及以上的才自动续期)
-            if ($time >= 10) {
+            //自动续期(所持有时间 5 秒及以上的才自动续期)
+            if ($time >= self::RENEWAL_MIN_TIME) {
                 $renewalTime = ($time - 2) * 1000;
                 $cid         = SwooleCo::getCid();
                 //首次续约与续约链后续排期统一走 scheduleRenewal（延迟=renewalTime）
@@ -93,7 +99,8 @@ class DcsLock
      */
     private static function renewalLock($lockKey, $uuid, $time, $renewalTime, $cid)
     {
-        if (!isset(self::$unlock[$lockKey . '::' . $uuid])) {
+        $stateKey = self::stateKey($lockKey, $uuid);
+        if (!isset(self::$unlock[$stateKey])) {
             return;
         }
         //执行加锁的协程不存在，则自动解锁，防止加锁协程异常中断，又未执行defer
@@ -111,6 +118,9 @@ class DcsLock
             //瞬时异常(连接抖动/连接池耗尽等):绝不放弃锁——业务仍在临界区、流程不可控，
             //放弃会让他人进临界区破坏互斥(比锁提前过期更糟)。改用远小于安全缓冲的间隔重试，
             //抢在 TTL 到期前续上;重试仍走回本方法，顶部两道闸会重新判定(已解锁/协程已亡则自然停)。
+            if (!isset(self::$unlock[$stateKey])) {
+                return;
+            }
             Logger::stdoutLog()->warning("DcsLock renewal expire exception [{$lockKey}]: " . $e->getMessage());
             self::scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, self::RENEWAL_RETRY_MS);
             return;
@@ -125,6 +135,9 @@ class DcsLock
 
         //正常续上，排下一次常规续约
         //sleep方式某些情况下会导致::all coroutines (count: *) are asleep - deadlock!
+        if (!isset(self::$unlock[$stateKey])) {
+            return;
+        }
         self::scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, $renewalTime);
     }
 
@@ -165,12 +178,50 @@ EOF;
      */
     private static function scheduleRenewal($lockKey, $uuid, $time, $renewalTime, $cid, int $delay)
     {
-        \Swoole\Timer::after(
+        $stateKey = self::stateKey($lockKey, $uuid);
+        self::clearRenewalTimerByStateKey($stateKey);
+
+        $timerId = null;
+        $timerId = \Swoole\Timer::after(
             $delay,
-            function () use ($lockKey, $uuid, $time, $renewalTime, $cid) {
+            function () use ($lockKey, $uuid, $time, $renewalTime, $cid, $stateKey, &$timerId) {
+                if ((self::$renewalTimers[$stateKey] ?? null) === $timerId) {
+                    unset(self::$renewalTimers[$stateKey]);
+                }
                 self::renewalLock($lockKey, $uuid, $time, $renewalTime, $cid);
             }
         );
+        if (is_int($timerId) && $timerId > 0) {
+            self::$renewalTimers[$stateKey] = $timerId;
+        }
+    }
+
+    private static function stateKey($lockKey, $uuid): string
+    {
+        return $lockKey . '::' . $uuid;
+    }
+
+    private static function clearRenewalTimer($lockKey, $uuid): void
+    {
+        self::clearRenewalTimerByStateKey(self::stateKey($lockKey, $uuid));
+    }
+
+    private static function clearRenewalTimerByStateKey(string $stateKey): void
+    {
+        $timerId = self::$renewalTimers[$stateKey] ?? null;
+        unset(self::$renewalTimers[$stateKey]);
+
+        if (!is_int($timerId) || $timerId <= 0) {
+            return;
+        }
+
+        try {
+            if (!method_exists(\Swoole\Timer::class, 'exists') || \Swoole\Timer::exists($timerId)) {
+                \Swoole\Timer::clear($timerId);
+            }
+        } catch (\Throwable) {
+            //Timer 已触发/已清理时不影响锁释放流程。
+        }
     }
 
     /**
@@ -185,7 +236,7 @@ EOF;
     {
         $redis = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
         if ($redis->set(self::realKey($lockKey), $uuid, ['NX', 'EX' => $time])) {
-            self::$unlock[$lockKey . '::' . $uuid] = true;
+            self::$unlock[self::stateKey($lockKey, $uuid)] = true;
             return true;
         }
         if ($timeout === 0) {
@@ -258,14 +309,20 @@ if redis.call('get', KEYS[1]) == ARGV[1] then
 end
 return 0;
 EOF;
-        $redis  = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
         $params = [self::realKey($lockKey), self::waitKey($lockKey), $uuid];
-        $ret    = self::evalLua($redis, $script, $params, 2);
-        if ($ret === false) {
-            $ret = self::_unlock($redis, ...$params);
+        unset(self::$unlock[self::stateKey($lockKey, $uuid)]);
+        self::clearRenewalTimer($lockKey, $uuid);
+        $redis  = get_inject_obj(RedisFactory::class)->get(config('app.dcslock_redis_pool', 'default'));
+        try {
+            $ret = self::evalLua($redis, $script, $params, 2);
+            if ($ret === false) {
+                $ret = self::_unlock($redis, ...$params);
+            }
+            return $ret ? true : false;
+        } finally {
+            unset(self::$unlock[self::stateKey($lockKey, $uuid)]);
+            self::clearRenewalTimer($lockKey, $uuid);
         }
-        unset(self::$unlock[$lockKey . '::' . $uuid]);
-        return $ret ? true : false;
     }
 
     /**
