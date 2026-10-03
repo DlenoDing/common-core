@@ -311,6 +311,11 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 
 - `DcsLock`: Redis 分布式锁，支持等待、自动续期、Lua 解锁。
 - `HttpClient`: 协程内走 Swoole Coroutine Client，非协程内走 curl。
+  - 网关间加密通信显式调用 `postInternal($url, $rawBody, $headers, $timeout)`，复用 Hyperf Guzzle 有界连接池；原 `post/get` 和渠道请求不自动切换。
+  - 每个进程、每个 origin 默认最多 32 条连接，抢连接最多等 1 秒，借出时按 15 秒空闲期限判定重建；空闲期限不是后台立即关连接的保证。`http_client.internal_pool` 可覆盖 Hyperf 标准池选项，不需要新增必填配置文件。
+  - 并发独占连接，清空服务端 Cookie；禁用自动重定向和自动重发。HTTPS 验证证书与主机名，不接受自签名证书。正常 4xx/5xx 保留状态与正文；传输异常返回原结果数组，池配置／代码异常不按网络异常吞掉。
+  - `rawBody` 是原始字符串；签名、AES/RSA、nonce、业务身份由调用方负责。非协程路径使用原生 curl 单次请求并启用证书／主机验证，不接入可能自动重发的 Guzzle curl handler；旧 `curlRequest/post` 的默认策略不改。应用接入前先发布本包再更新依赖，不能先发布调用新方法的应用。
+  - `php examples/internal-http-pool-check.php /path/to/app/vendor/autoload.php` 为回环校验，使用应用已安装的 Hyperf/Swoole 依赖，覆盖 TCP 复用、16 路并发、Header/body/Cookie 隔离、错误状态、重定向禁用、超时／断连不重发及恢复；不调用支付渠道，不代表生产吞吐验收。
 - `OpenSslCrypt`: AES/DES 对称加解密。
 - `OpenSslRsa` / `OpenSslRsa2`: RSA 分块加解密。两者协议不同——`OpenSslRsa` 密文为 hex（偏长），`OpenSslRsa2` 密文为 base64（约短一半）。接口加密的 `Client-Key`（AES 密钥）解密走 `OpenSslRsa2`，客户端须使用同款算法加密。
 - `CheckVal` / `CheckParams`: 常用格式校验和参数校验。

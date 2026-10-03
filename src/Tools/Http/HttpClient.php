@@ -11,6 +11,7 @@ use Hyperf\Coroutine\Coroutine;
  */
 class HttpClient
 {
+    private static $internalClient;
     //默认超时(秒)。安全兜底,避免慢/挂起后端把协程永久阻塞;
     //调用方仍可显式传 -1 表示"永不超时"(自担风险)。
     private const DEFAULT_TIMEOUT = 30;
@@ -54,6 +55,40 @@ class HttpClient
             return self::coRequest($url, $data, 'POST', $header, $timeout);
         } else {
             return self::curlRequest($url, $data, 'POST', $header, $timeout);
+        }
+    }
+
+    /** 网关间通信显式使用有界连接池；渠道请求仍使用原 post，不自动重发。 */
+    public static function postInternal(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
+    {
+        $parsed = parse_url($url);
+        if (!is_array($parsed) || empty($parsed['host']) || !in_array($parsed['scheme'] ?? '', ['http', 'https'], true)) {
+            throw new \InvalidArgumentException('Invalid internal HTTP URL');
+        }
+        // Native curl stays one-shot; Guzzle's curl handler may retry a stale connection.
+        if (!Coroutine::inCoroutine()) return self::curlRequest($url, $data, 'POST', $header, $timeout, true);
+        self::$internalClient ??= new \GuzzleHttp\Client([
+            'handler' => \GuzzleHttp\HandlerStack::create(new \Hyperf\Guzzle\PoolHandler(
+                get_inject_obj(\Hyperf\Pool\SimplePool\PoolFactory::class),
+                array_replace(['min_connections' => 0, 'max_connections' => 32, 'connect_timeout' => 5,
+                    'wait_timeout' => 1, 'max_idle_time' => 15], \Hyperf\Config\config('http_client.internal_pool', [])), false
+            )),
+            'allow_redirects' => false, 'http_errors' => false, 'cookies' => false,
+        ]);
+        try {
+            $response = self::$internalClient->request('POST', $url, [
+                'body' => $data, 'headers' => array_merge(self::$defaultHeader, ['Host' => $parsed['host']], $header),
+                'timeout' => $timeout > 0 ? $timeout : 0, 'connect_timeout' => 5, 'verify' => true,
+                'swoole' => ['timeout' => $timeout > 0 ? $timeout : -1, 'connect_timeout' => 5, 'keep_alive' => true,
+                    'ssl_allow_self_signed' => false, 'ssl_host_name' => $parsed['host']],
+            ]);
+            return ['statusCode' => $response->getStatusCode(), 'headers' => $response->getHeaders(),
+                'body' => (string)$response->getBody(), 'errCode' => 0, 'errMsg' => ''];
+        } catch (\GuzzleHttp\Exception\TransferException $error) {
+            $context = $error instanceof \GuzzleHttp\Exception\RequestException || $error instanceof \GuzzleHttp\Exception\ConnectException
+                ? $error->getHandlerContext() : [];
+            return ['statusCode' => 0, 'headers' => [], 'body' => '',
+                'errCode' => (int)($context['errCode'] ?? $error->getCode()) ?: -1, 'errMsg' => $error->getMessage()];
         }
     }
 
@@ -193,7 +228,7 @@ class HttpClient
      * @param int $timeout 秒；<=0 表示不设超时
      * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
-    public static function curlRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = self::DEFAULT_TIMEOUT)
+    public static function curlRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = self::DEFAULT_TIMEOUT, bool $verify = false)
     {
         if (is_array($data) || is_object($data)) {
             $data = http_build_query($data);
@@ -216,6 +251,7 @@ class HttpClient
 
             //----设置超时----
             curl_setopt($ch, CURLOPT_NOSIGNAL, true);//禁用信号机制
+            if ($verify) curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
             //从服务器接收缓冲完成前需要等待多长时间
             if ($timeout > 0) {
                 curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);//秒
@@ -224,8 +260,8 @@ class HttpClient
             //----HTTPS----
             $ssl = ($parsedUrl['scheme'] ?? '') === 'https';
             if ($ssl) {
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $verify);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verify ? 2 : 0);
             }
 
             //-----HEADER-----
