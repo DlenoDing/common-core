@@ -28,10 +28,12 @@ final class ElasticHttpPool
     private ?float $failedRound = null;
     private int $created = 0;
     private int $requests = 0;
+    /** Connection retirement times; a WeakMap forgets closed clients without manual bookkeeping. */
+    private \WeakMap $retireAt;
 
     private function __construct(private string $host, private int $port, private bool $ssl, private array $options)
     {
-
+        $this->retireAt = new \WeakMap();
     }
 
     public static function request(string $kind, string $url, $data, string $method, array $headers, $timeout, array $options): array
@@ -126,7 +128,7 @@ final class ElasticHttpPool
         foreach ($this->idle as $key => $entry) {
             $expired = $this->healthPath() === null
                 && self::now() - $entry['released'] > (float)($this->options['max_idle_time'] ?? 60);
-            if ($expired || !$this->usable($entry['client'])) {
+            if ($expired || $this->aged($entry['client']) || !$this->usable($entry['client'])) {
                 $entry['client']->close();
                 unset($this->idle[$key]);
                 continue;
@@ -171,10 +173,23 @@ final class ElasticHttpPool
     private function makeClient(): Client
     {
         ++$this->created;
-        return new Client($this->host, $this->port, $this->ssl);
+        $client = new Client($this->host, $this->port, $this->ssl);
+        $max = (float)($this->options['max_lifetime'] ?? 600);
+        // Retire within the last 10% of the lifetime so connections created together do not reconnect together.
+        if ($max > 0) $this->retireAt[$client] = self::now() + $max * (0.9 + 0.1 * mt_rand() / mt_getrandmax());
+        return $client;
     }
 
-    private function send(string $path, $data, string $method, array $headers, $timeout, ?Client $provided = null, bool $maintenance = false, ?float $lastReleased = null): array
+    /**
+     * Long-lived keep-alive sockets never resolve DNS again. Within max_lifetime (seconds, default 600, 0 disables)
+     * a connection finishes its current request and is retired, allowing refreshed DNS results to take effect.
+     */
+    private function aged(Client $client): bool
+    {
+        return isset($this->retireAt[$client]) && self::now() >= $this->retireAt[$client];
+    }
+
+    private function send(string $path, $data, string $method, array $headers, $timeout, ?Client $provided = null, bool $maintenance = false, ?float $lastReleased = null, ?bool &$retired = null): array
     {
         foreach ($headers as $name => &$value) {
             if (is_array($value)) $value = implode(strcasecmp((string)$name, 'Cookie') === 0 ? '; ' : ', ', $value);
@@ -212,7 +227,7 @@ final class ElasticHttpPool
                     ? array_shift($this->idle) : array_pop($this->idle);
                 $expired = self::now() - $entry['released'] > (float)($this->options['max_idle_time'] ?? 60)
                     && ($this->healthPath() === null || $this->liveCount() >= $this->minimum());
-                if (!$expired && $this->usable($entry['client'])) { $client = $entry['client']; break; }
+                if (!$expired && !$this->aged($entry['client']) && $this->usable($entry['client'])) { $client = $entry['client']; break; }
                 $entry['client']->close();
             }
             if ($client === null) { $client = $this->makeClient(); $fresh = true; }
@@ -220,6 +235,7 @@ final class ElasticHttpPool
         $id = spl_object_id($client);
         $this->busy[$id] = $client;
         $reusable = false;
+        $retired = false;
         if (!$maintenance) ++$this->requests;
         try {
             $client->set(array_replace([
@@ -257,21 +273,24 @@ final class ElasticHttpPool
             $connection = $responseHeaders['connection'] ?? '';
             $connection = is_array($connection) ? implode(',', $connection) : $connection;
             $close = preg_match('/(?:^|,)\s*close\s*(?:,|$)/i', $connection) === 1;
-            $reusable = $code > 0 && !$close && $this->usable($client);
+            $healthy = $code > 0 && !$close && $this->usable($client);
+            $retired = $healthy && $this->aged($client);
+            $reusable = $healthy && !$retired;
             return ['statusCode' => $code, 'headers' => $responseHeaders, 'body' => $client->getBody(), 'errCode' => 0, 'errMsg' => ''];
         } finally {
             unset($this->busy[$id]);
             if (!$maintenance && $fresh && $this->healthPath() === null) {
-                $this->growFloorAt = $reusable ? 0 : self::now() + 2;
+                $this->growFloorAt = ($reusable || $retired) ? 0 : self::now() + 2;
             }
             if ($reusable && !$this->closed) {
                 $this->idle[] = ['client' => $client, 'released' => $lastReleased ?? self::now(), 'checked' => self::now()];
-                if (!$maintenance && $this->healthPath() !== null && ($fresh || $this->liveCount($this->minimum()) >= $this->minimum())) {
-                    $this->failures = 0; $this->retryAt = 0; $this->failedRound = null;
-                    // Successful business recovery supersedes any older probes still completing.
-                    $this->reconnectRound = self::now();
-                }
             } else $client->close();
+            if (!$maintenance && ($reusable || $retired) && $this->healthPath() !== null
+                && ($fresh || $this->liveCount($this->minimum()) >= $this->minimum())) {
+                $this->failures = 0; $this->retryAt = 0; $this->failedRound = null;
+                // Successful business recovery supersedes any older probes still completing.
+                $this->reconnectRound = self::now();
+            }
         }
     }
 
@@ -284,7 +303,7 @@ final class ElasticHttpPool
             $live = $this->liveCount();
             foreach ($this->idle as $key => $entry) {
                 $usable = $this->usable($entry['client']);
-                if (!$usable || (($this->healthPath() === null || $live > $this->minimum())
+                if (!$usable || $this->aged($entry['client']) || (($this->healthPath() === null || $live > $this->minimum())
                     && $now - $entry['released'] > (float)($this->options['max_idle_time'] ?? 60))) {
                     unset($this->idle[$key]);
                     --$live;
@@ -328,10 +347,11 @@ final class ElasticHttpPool
         if ($this->closed) { $client->close(); return; }
         $method = strtoupper((string)($this->options['health_method'] ?? 'HEAD'));
         if (!in_array($method, ['GET', 'HEAD'], true)) { $client->close(); return; }
-        $response = $this->send($path, '', $method, ['User-Agent' => 'common-core-http-health/1', 'Connection' => 'keep-alive'], 5, $client, true, $lastReleased);
+        $retired = false;
+        $response = $this->send($path, '', $method, ['User-Agent' => 'common-core-http-health/1', 'Connection' => 'keep-alive'], 5, $client, true, $lastReleased, $retired);
         // Only the current reconnect batch controls backoff; heartbeats and older batches do not.
         if ($reconnectRound === null || $reconnectRound !== $this->reconnectRound) return;
-        if ($response['errCode'] || !$client->connected) {
+        if ($response['errCode'] || (!$client->connected && !$retired)) {
             if ($this->failedRound !== $reconnectRound) {
                 ++$this->failures;
                 $this->failedRound = $reconnectRound;
