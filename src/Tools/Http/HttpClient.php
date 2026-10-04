@@ -11,7 +11,6 @@ use Hyperf\Coroutine\Coroutine;
  */
 class HttpClient
 {
-    private static $internalClient;
     //默认超时(秒)。安全兜底,避免慢/挂起后端把协程永久阻塞;
     //调用方仍可显式传 -1 表示"永不超时"(自担风险)。
     private const DEFAULT_TIMEOUT = 30;
@@ -58,38 +57,102 @@ class HttpClient
         }
     }
 
-    /** 网关间通信显式使用有界连接池；渠道请求仍使用原 post，不自动重发。 */
+    /** 网关间通信：无业务连接上限，有效连接保底默认 5；业务请求绝不重发。 */
     public static function postInternal(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
     {
-        $parsed = parse_url($url);
-        if (!is_array($parsed) || empty($parsed['host']) || !in_array($parsed['scheme'] ?? '', ['http', 'https'], true)) {
-            throw new \InvalidArgumentException('Invalid internal HTTP URL');
-        }
-        // Native curl stays one-shot; Guzzle's curl handler may retry a stale connection.
         if (!Coroutine::inCoroutine()) return self::curlRequest($url, $data, 'POST', $header, $timeout, true);
-        self::$internalClient ??= new \GuzzleHttp\Client([
-            'handler' => \GuzzleHttp\HandlerStack::create(new \Hyperf\Guzzle\PoolHandler(
-                get_inject_obj(\Hyperf\Pool\SimplePool\PoolFactory::class),
-                array_replace(['min_connections' => 0, 'max_connections' => 32, 'connect_timeout' => 5,
-                    'wait_timeout' => 1, 'max_idle_time' => 15], \Hyperf\Config\config('http_client.internal_pool', [])), false
-            )),
-            'allow_redirects' => false, 'http_errors' => false, 'cookies' => false,
-        ]);
-        try {
-            $response = self::$internalClient->request('POST', $url, [
-                'body' => $data, 'headers' => array_merge(self::$defaultHeader, ['Host' => $parsed['host']], $header),
-                'timeout' => $timeout > 0 ? $timeout : 0, 'connect_timeout' => 5, 'verify' => true,
-                'swoole' => ['timeout' => $timeout > 0 ? $timeout : -1, 'connect_timeout' => 5, 'keep_alive' => true,
-                    'ssl_allow_self_signed' => false, 'ssl_host_name' => $parsed['host']],
-            ]);
-            return ['statusCode' => $response->getStatusCode(), 'headers' => $response->getHeaders(),
-                'body' => (string)$response->getBody(), 'errCode' => 0, 'errMsg' => ''];
-        } catch (\GuzzleHttp\Exception\TransferException $error) {
-            $context = $error instanceof \GuzzleHttp\Exception\RequestException || $error instanceof \GuzzleHttp\Exception\ConnectException
-                ? $error->getHandlerContext() : [];
-            return ['statusCode' => 0, 'headers' => [], 'body' => '',
-                'errCode' => (int)($context['errCode'] ?? $error->getCode()) ?: -1, 'errMsg' => $error->getMessage()];
+        return self::pooledRequest('internal', $url, $data, 'POST', $header, $timeout);
+    }
+
+    /** Explicit opt-in for approved Driver application/query call sites. Legacy methods stay unchanged. */
+    public static function getPooled(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
+    {
+        return self::requestPooled($url, $data, 'GET', $header, $timeout);
+    }
+
+    public static function postPooled(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
+    {
+        return self::requestPooled($url, $data, 'POST', $header, $timeout);
+    }
+
+    public static function putPooled(string $url, $data, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
+    {
+        return self::requestPooled($url, $data, 'PUT', $header, $timeout);
+    }
+
+    public static function requestPooled(string $url, $data, string $method, array $header = [], $timeout = self::DEFAULT_TIMEOUT)
+    {
+        $method = strtoupper($method);
+        if ($method === 'GET') {
+            $url = explode('#', $url, 2)[0];
+            $query = self::buildQuery($data);
+            if ($query !== '') $url .= (str_contains($url, '?') ? '&' : '?') . $query;
+            $data = '';
         }
+        if (!Coroutine::inCoroutine()) return self::curlRequest($url, $data, $method, $header, $timeout);
+        return self::pooledRequest('driver', $url, $data, $method, $header, $timeout);
+    }
+
+    /** SDK transport: preserve SDK headers exactly; retain its TLS settings and response bytes. */
+    public static function requestSdkPooled(string $url, $data, string $method, array $header, $timeout = 30, array $transport = [])
+    {
+        if (!Coroutine::inCoroutine()) throw new \LogicException('Pooled SDK transport requires a coroutine');
+        $options = self::poolOptions('driver', $url);
+        $options['transport'] = array_replace($options['transport'], $transport);
+        return ElasticHttpPool::request('driver', $url, $data, $method, $header, $timeout, $options);
+    }
+
+    private static function pooledRequest(string $kind, string $url, $data, string $method, array $headers, $timeout): array
+    {
+        $parsed = parse_url($url);
+        if (!is_array($parsed) || empty($parsed['host'])) throw new \InvalidArgumentException('Invalid pooled HTTP URL');
+        $host = $parsed['host'];
+        if ($kind === 'internal' && isset($parsed['port'])
+            && $parsed['port'] !== (($parsed['scheme'] ?? '') === 'https' ? 443 : 80)) $host .= ':' . $parsed['port'];
+        $merged = array_merge(self::$defaultHeader, ['Host' => $host]);
+        $names = array_combine(array_map('strtolower', array_keys($merged)), array_keys($merged));
+        foreach ($headers as $name => $value) {
+            $lower = strtolower($name);
+            $canonical = $names[$lower] ?? $name;
+            $merged[$canonical] = $value;
+            $names[$lower] = $canonical;
+        }
+        $headers = $merged;
+        $options = self::poolOptions($kind, $url);
+        if ($kind === 'internal') $options['transport'] = array_replace($options['transport'], [
+            'ssl_verify_peer' => true, 'ssl_allow_self_signed' => false,
+        ]);
+        $response = ElasticHttpPool::request($kind, $url, $data, $method, $headers, $timeout, $options);
+        if ($kind === 'internal') {
+            // Preserve postInternal's existing Guzzle-compatible multi-value header shape.
+            foreach ($response['headers'] as &$value) $value = is_array($value) ? $value : [$value];
+            unset($value);
+        }
+        return $response;
+    }
+
+    private static function poolOptions(string $kind, string $url): array
+    {
+        $options = array_replace([
+            'min_connections' => $kind === 'internal' ? 5 : 2,
+            'connect_timeout' => 5, 'max_idle_time' => 60, 'heartbeat' => 20,
+            'health_path' => $kind === 'internal' ? '/' : null,
+            'health_method' => 'GET',
+            // Match each existing transport. Antom SDK explicitly overrides this with true.
+            'transport' => ['ssl_verify_peer' => $kind === 'internal'],
+        ], \Hyperf\Config\config('http_client.' . $kind . '_pool', []));
+        $options['transport'] = array_replace(['ssl_verify_peer' => $kind === 'internal'], $options['transport']);
+        $parsed = parse_url($url);
+        $origin = ($parsed['scheme'] ?? '') . '://' . strtolower($parsed['host'] ?? '') . ':'
+            . ($parsed['port'] ?? (($parsed['scheme'] ?? '') === 'https' ? 443 : 80));
+        $targets = array_change_key_case($options['health_targets'] ?? [], CASE_LOWER);
+        $options['health_targets'] = $targets;
+        $health = $targets[$origin] ?? null;
+        if (is_array($health)) {
+            $options['health_path'] = $health['path'] ?? null;
+            $options['health_method'] = $health['method'] ?? 'HEAD';
+        }
+        return $options;
     }
 
     /**

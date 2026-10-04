@@ -311,11 +311,14 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 
 - `DcsLock`: Redis 分布式锁，支持等待、自动续期、Lua 解锁。
 - `HttpClient`: 协程内走 Swoole Coroutine Client，非协程内走 curl。
-  - 网关间加密通信显式调用 `postInternal($url, $rawBody, $headers, $timeout)`，复用 Hyperf Guzzle 有界连接池；原 `post/get` 和渠道请求不自动切换。
-  - 每个进程、每个 origin 默认最多 32 条连接，抢连接最多等 1 秒，借出时按 15 秒空闲期限判定重建；空闲期限不是后台立即关连接的保证。`http_client.internal_pool` 可覆盖 Hyperf 标准池选项，不需要新增必填配置文件。
-  - 并发独占连接，清空服务端 Cookie；禁用自动重定向和自动重发。HTTPS 验证证书与主机名，不接受自签名证书。正常 4xx/5xx 保留状态与正文；传输异常返回原结果数组，池配置／代码异常不按网络异常吞掉。
-  - `rawBody` 是原始字符串；签名、AES/RSA、nonce、业务身份由调用方负责。非协程路径使用原生 curl 单次请求并启用证书／主机验证，不接入可能自动重发的 Guzzle curl handler；旧 `curlRequest/post` 的默认策略不改。应用接入前先发布本包再更新依赖，不能先发布调用新方法的应用。
-  - `php examples/internal-http-pool-check.php /path/to/app/vendor/autoload.php` 为回环校验，使用应用已安装的 Hyperf/Swoole 依赖，覆盖 TCP 复用、16 路并发、Header/body/Cookie 隔离、错误状态、重定向禁用、超时／断连不重发及恢复；不调用支付渠道，不代表生产吞吐验收。
+  - `postInternal` 使用进程内 Swoole HTTP 连接池；`getPooled/postPooled/putPooled` 为渠道申请、查询的显式接入，原 `get/post/put/delete/patch` 不变。池按 origin 和传输设置隔离，每次独占连接，不共享请求 Header、正文或 Cookie。
+  - 无连接数上限、无抢连接队列；空闲连接不足立即创建。无探活池通过密集业务逐步建立保底，保底内轮换复用；流量间隔不足以在空闲有效期内维持保底时，优先复用健康连接；参考最近两次间隔，避免门限两侧抖动造成反复冷连。补足保底的新建失败后，后续独立业务在 2 秒内优先复用已有健康连接，当前失败请求不重发。旧 `max_connections/wait_timeout` 不再使用。`min_connections` 统计真实已连接的忙碌与空闲连接，不要求始终保留指定数量的空闲连接。默认内部 5、渠道 2。
+  - `http_client.internal_pool` / `http_client.driver_pool` 可设置 `min_connections`、`connect_timeout`（默认 5 秒）、`max_idle_time`（默认 60 秒）、`heartbeat`（默认 20 秒）。借出时和后台每秒扫描都检查空闲期限；后台回收超出保底且超过空闲期限的连接；无安全健康路径时，保底连接也遵守空闲期限，由后续正常业务补建；健康探活不延长业务空闲期限。所有池内时间间隔／轮次使用单调时钟 hrtime，不受系统墙钟回拨影响；业务签名时间戳不变。配置在首次建立池时读取，变更须重启进程。
+  - 内部默认 `health_path='/'`、`health_method='GET'`，调用方须保证该路径安全。渠道默认没有健康路径，靠实际业务逐步建立保底连接；远端关闭或长时间无业务时不保证有效数量，不发送支付、查询或 Token 心跳。URL 主机名与健康配置 origin 键均按小写匹配。仅对已确认安全且可保持连接的目标配置 `health_targets['https://api.example.com:443']=['path'=>'/health','method'=>'HEAD']`；仅支持 GET/HEAD，不支持的方法按未配置探活处理，路径不得带查询、片段或其他 origin。可将内部 `health_path` 设为 null 禁用探活。
+  - 维护只借用空闲连接，补建失败按轮次采用 2/4/8/16/30 秒退避，同一轮多条失败只计一次；已有连接的心跳不随补建退避停止，也不改变补建退避；上一批补建全部结束前不派发新批次，防错峰超时架空退避；探活响应必须完整且连接可继续使用，HTTP 状态本身不是业务或健康成功判断。`ElasticHttpPool::statistics()` 提供进程内 live/idle/busy、保底满足情况、补建失败轮数（maintenanceFailures）和维护运行状态。维护协程创建遇到容量上限时不阻断当前业务，计数／连接正常归还，后续业务再尝试启动。维护异常按 ERROR 记录，不永久关闭池；下一次业务可重启维护并继续复用健康连接。新建业务连接成功或业务补足内部保底时清除历史补建退避，旧探活结果不回写该状态。随 worker 退出关闭空闲连接，业务连接在请求完成后关闭。
+  - 禁用重定向及底层重发（`max_retries=0`，不允许配置覆盖）；正常 4xx/5xx 保留状态与正文。Swoole 6.1 返回 1xx 时无法继续收取该请求的最终响应，按结果未确认返回 errCode=-1 并关闭连接，不回池、不重发。失败连接及有残留可读数据的空闲连接立即关闭，不允许 TLS EOF 后被再次判定可用，本次请求不补发；协程池多值 Header 按 HTTP 列表合并（Cookie 分号、其他逗号），默认头按大小写无关覆盖；HTTP 方法按合法 token 检查，阻止请求行空格／换行注入；Header 的 CR/LF 在发送前拒绝，避免破坏请求边界；下一次独立业务可新建。业务配置／代码异常继续抛出，后台维护异常按 ERROR 记录。请求超时、读写超时、同步收响应、keep-alive、Header 小写和零重试不允许 transport 配置覆盖。内部协程响应头维持多值数组格式，非协程 cURL 分支保持原格式。内部 TLS 验证证书和主机名；普通渠道保持原传输的 TLS 策略，SDK 用 `requestSdkPooled` 保留自身 Header 和 TLS 设置。
+  - 非协程路径保持原生 curl 单次请求，不使用连接池。签名、AES/RSA、nonce、业务身份由调用方负责。应用接入前先发布包含新方法的本包再更新依赖，不能先发布调用新方法的应用。
+  - `php examples/internal-http-pool-check.php /path/to/app/vendor/autoload.php` 覆盖 TCP 复用、64 路并发、Header/body/Cookie 隔离、状态、禁用重定向、超时／断连不重发；`elastic-http-pool-check.php` 覆盖真实活动保底、64 路扩容、超额回收和内部预热。`http-pool-capacity-check.php` 在实际框架错误处理器下覆盖协程容量耗尽及恢复；`http-pool-tls-check.php` 覆盖正常 TLS 1.3 复用和无 close_notify 的 TCP FIN 重复检查。`http-pool-floor-check.php` 覆盖补足保底失败后独立请求仍使用健康连接；`http-pool-maintenance-check.php` 注入协调器异常，覆盖维护故障记录、恢复和 TCP 复用。`http-pool-stagger-check.php` 以错峰关闭／延迟响应验证补建批次不重叠及退避正确。`http-pool-clock-check.php` 模拟墙钟回拨，确认池内时序与 TCP 复用不受影响。`http-pool-timeout-check.php` 覆盖同一 TCP 上长短请求的独立超时。均仅回环，不代表生产吞吐或渠道验收。
 - `OpenSslCrypt`: AES/DES 对称加解密。
 - `OpenSslRsa` / `OpenSslRsa2`: RSA 分块加解密。两者协议不同——`OpenSslRsa` 密文为 hex（偏长），`OpenSslRsa2` 密文为 base64（约短一半）。接口加密的 `Client-Key`（AES 密钥）解密走 `OpenSslRsa2`，客户端须使用同款算法加密。
 - `CheckVal` / `CheckParams`: 常用格式校验和参数校验。
