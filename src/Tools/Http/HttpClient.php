@@ -138,10 +138,9 @@ class HttpClient
             'connect_timeout' => 5, 'max_idle_time' => 60, 'heartbeat' => 20,
             'health_path' => $kind === 'internal' ? '/' : null,
             'health_method' => 'GET',
-            // Match each existing transport. Antom SDK explicitly overrides this with true.
-            'transport' => ['ssl_verify_peer' => $kind === 'internal'],
+            'transport' => ['ssl_verify_peer' => true, 'ssl_allow_self_signed' => false],
         ], \Hyperf\Config\config('http_client.' . $kind . '_pool', []));
-        $options['transport'] = array_replace(['ssl_verify_peer' => $kind === 'internal'], $options['transport']);
+        $options['transport'] = array_replace(['ssl_verify_peer' => true, 'ssl_allow_self_signed' => false], $options['transport']);
         $parsed = parse_url($url);
         $origin = ($parsed['scheme'] ?? '') . '://' . strtolower($parsed['host'] ?? '') . ':'
             . ($parsed['port'] ?? (($parsed['scheme'] ?? '') === 'https' ? 443 : 80));
@@ -228,7 +227,9 @@ class HttpClient
         $port   = $parsed['port'] ?? ($ssl ? 443 : 80);
         $client = new \Swoole\Coroutine\Http\Client($parsed['host'], intval($port), $ssl);
         try {
-            $client->set(['timeout' => $timeout]);//-1为不超时
+            $options = ['timeout' => $timeout]; // -1 为不超时。
+            if ($ssl) $options += ['ssl_verify_peer' => true, 'ssl_allow_self_signed' => false, 'ssl_host_name' => $parsed['host']];
+            $client->set($options);
             $client->setHeaders(
                 array_merge(
                     self::$defaultHeader,
@@ -291,7 +292,7 @@ class HttpClient
      * @param int $timeout 秒；<=0 表示不设超时
      * @return array{statusCode:int,headers:array,body:string,errCode:int,errMsg:string}
      */
-    public static function curlRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = self::DEFAULT_TIMEOUT, bool $verify = false)
+    public static function curlRequest(string $url, $data, $method = 'POST', array $header = [], $timeout = self::DEFAULT_TIMEOUT, bool $verify = true)
     {
         if (is_array($data) || is_object($data)) {
             $data = http_build_query($data);
@@ -314,7 +315,7 @@ class HttpClient
 
             //----设置超时----
             curl_setopt($ch, CURLOPT_NOSIGNAL, true);//禁用信号机制
-            if ($verify) curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
             //从服务器接收缓冲完成前需要等待多长时间
             if ($timeout > 0) {
                 curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);//秒
