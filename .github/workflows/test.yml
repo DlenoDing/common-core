@@ -16,7 +16,7 @@ jobs:
 
       - name: Validate, install, lint, analyse and test
         run: |
-          docker run --rm -v "$PWD":/app -w /app hyperf/hyperf:8.4-alpine-v3.22-swoole-v6.2 sh -c '
+          docker run --rm -v "$PWD":/app -w /app registry.cn-hongkong.aliyuncs.com/dleno-server/php:alp324-php84-sw6.2.3 sh -c '
             set -e
             php -v | head -1
             php --ri swoole | grep -i "^version"

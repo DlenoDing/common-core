@@ -174,7 +174,7 @@ return [
 - HTTP 请求初始化、语言/时区/traceId 等上下文处理。
 - 路由分发增强和请求对象替换。
 - AutoController 请求方式控制：方法级 `#[AllowMethods]` 优先，其次类级 `AutoController(defaultMethods)`、`config('app.default_allow_methods')`、默认 `['POST', 'GET']`；包含 `GET` 时自动补 `HEAD`，`OPTIONS` 预检由 `InitMiddleware` 统一处理。
-- 模块前置中间件提供签名校验、请求解密、登录校验和防重放钩子。`AbstractModuleBeforeMiddleware` 封装流程，`DefaultModuleBeforeMiddleware` 提供默认钩子实现，业务通常继承默认实现后在 `dependencies.php` 绑定抽象基类来接管。该中间件只处理已命中路由（`FOUND`）；`NOT_FOUND` / `METHOD_NOT_ALLOWED` 会放行给管线末端 `CoreMiddleware` 返回 404 / 405，避免未知路由被误判为签名错误。
+- 模块前置中间件提供签名校验、请求解密、登录校验和防重放钩子。`AbstractModuleBeforeMiddleware` 封装流程，`DefaultModuleBeforeMiddleware` 提供默认钩子实现，业务通常继承默认实现后在 `dependencies.php` 绑定抽象基类来接管。该中间件只处理已命中路由（`FOUND`）且处理器为注解控制器（`#[AutoController]` / `#[Controller]`）的请求，`config/routes.php` 里的闭包路由（健康检查、favicon 等）不做签名/解密/登录校验；`NOT_FOUND` / `METHOD_NOT_ALLOWED` 会放行给管线末端 `CoreMiddleware` 返回 404 / 405，避免未知路由被误判为签名错误。请求解密后的参数会随请求向下传递，控制器可直接取用；解密失败返回 400。
 
 示例：
 
@@ -199,7 +199,7 @@ return [
 - API/RPC/Error 输出日志封装。
 - HTTP/WS Controller 响应日志切面。
 - 按渠道输出 stdout、system、api、sql、business 日志。
-- `LogFileHandler` 写入期间不改动进程级错误处理器栈：Swoole 文件 hook 下写日志让出协程时，其他协程的 warning 仍交给 Hyperf 的 ErrorExceptionHandler，不会被 monolog 临时处理器吞掉；写入失败仍按 monolog 关闭重开并重试一次。
+- `LogFileHandler` 写日志（建目录、打开、写入、轮转清理）全程不改动进程级错误处理器栈：Swoole 文件 hook 下写日志让出协程时，其他协程的 warning 仍交给 Hyperf 的 ErrorExceptionHandler，不会被 monolog 临时处理器吞掉；写入失败（含句柄被其他协程轮转关闭）时关闭重开，最多重试 3 次。
 - 错误输出可读取业务 `config/autoload/dingtalk.php` 的 `dingtalk.trace` 配置发送异常追踪通知。
 
 ### Model 与数据库
@@ -318,6 +318,15 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 - MQ 异步 RPC 封装。
 - MQ RPC 失败重试和异常链保留。
 
+JSON-RPC 默认使用 hyperf/serializer 的 `SimpleNormalizer`，返回值为数组，不会按返回类型还原成 PHP 对象。需要还原对象时：
+
+- 当前 Hyperf 3.2.0 的 `Hyperf\Serializer\Serializer` 与 symfony/serializer 7.x 签名不兼容（加载即 Fatal），须先在项目里把 `symfony/serializer`、`symfony/property-access` 限定为 `^6.4`；
+- 再在项目 `config/autoload/dependencies.php` 中绑定（hyperf/serializer 自身也绑定了该接口且加载在本包之后，包内覆盖不住）：
+
+```php
+Hyperf\Contract\NormalizerInterface::class => new Hyperf\Serializer\SerializerFactory(Hyperf\Serializer\Serializer::class),
+```
+
 示例：
 
 - `examples/Tools/UsageExamples.php`
@@ -379,7 +388,7 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 
 - `APP_NAME`: 应用名，Redis key 前缀等通用配置会使用。
 - `APP_ENV`: 当前运行环境；存在 `.env.<APP_ENV>` 时会覆盖 `.env` 中的同名变量。
-- `IS_PROD`: 强制判定为正式环境；未设置时 `config('app_env') === 'prod'` 也会视为正式环境。
+- `IS_PROD`: 强制判定为正式环境；未设置时 `config('app_env') === 'prod'` 也会视为正式环境。正式环境的 `APP_ENV` 必须写成 `prod`（写成 `production` 等其他值会被当作非正式环境，`Client-Debug` 请求头可跳过签名/解密/登录校验）。
 - `ENABLE_HTTP`: 是否启用 HTTP server 相关基础中间件。
 - `ENABLE_WS`: 是否启用 WebSocket 相关进程和中间件。未启用（或 local 未开 `websocket.local_enable`）时，WS 消费进程不注册、不构造队列驱动，未配置 `async_queue` 的项目也可正常启动，无需在业务侧清除进程注解。
 - `HTTP_INIT_MIDDLEWARE_ENABLE`: 是否自动注入 HTTP 初始化中间件和模块前置中间件，默认开启。

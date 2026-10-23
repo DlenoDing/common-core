@@ -121,7 +121,7 @@ class BaseConsumer extends ConsumerMessage
     {
         if ($this->delayExchange) {//延时消息
             return (new ExchangeBuilder())->setExchange($this->getExchange())->setType('x-delayed-message')->setArguments(
-                new AMQPTable(['x-delayed-type' => $this->type])
+                new AMQPTable(['x-delayed-type' => $this->getTypeString()])
             );
         } else {
             return parent::getExchangeBuilder();

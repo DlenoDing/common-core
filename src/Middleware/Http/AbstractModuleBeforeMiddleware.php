@@ -14,6 +14,9 @@ use Dleno\CommonCore\Tools\Logger;
 use Dleno\CommonCore\Tools\Server;
 use FastRoute\Dispatcher;
 use Hyperf\Context\Context;
+use Hyperf\Di\Annotation\AnnotationCollector;
+use Hyperf\HttpServer\Annotation\AutoController;
+use Hyperf\HttpServer\Annotation\Controller;
 use Hyperf\HttpServer\Contract\RequestInterface;
 use Hyperf\HttpServer\Router\Dispatched;
 use Psr\Http\Message\ResponseInterface;
@@ -28,7 +31,8 @@ use function Hyperf\Config\config;
  *
  * 作为 PSR-15 全局中间件，运行于「路由分发之后、控制器之前」
  *（Hyperf 在 Server::onRequest 中先 coreMiddleware->dispatch() 完成路由分发并写入 Dispatched，再跑中间件管线）：
- *   - 仅对已命中路由(FOUND)做签名/解密/鉴权，白名单经 Server::getRouteMca() 取权威路由；
+ *   - 仅对已命中路由(FOUND)且处理器为注解控制器(#[AutoController]/#[Controller])时做签名/解密/鉴权，
+ *     白名单经 Server::getRouteMca() 取权威路由；routes.php 闭包路由(健康检查等)不校验，与原 AOP 切面范围一致；
  *   - 非 FOUND（NOT_FOUND / METHOD_NOT_ALLOWED）直接放行，交管线末端 CoreMiddleware->process() 返 404 / 405
  *     （故不会对未命中路由误跑签名、把 404 变成签名 403）；
  *   - 与 WS 端 WebSocketAuthMiddleware 对称，HTTP/WS 鉴权统一为中间件；
@@ -90,22 +94,52 @@ abstract class AbstractModuleBeforeMiddleware implements MiddlewareInterface
         //仅对已命中路由(FOUND)做签名/解密/鉴权；其余状态直接放行，交管线末端 CoreMiddleware->process() 处理：
         //  - NOT_FOUND → CoreMiddleware 抛 404；METHOD_NOT_ALLOWED → 405（与原只在控制器执行时生效的语义一致）；
         //  - 不对非 FOUND 跑签名：其 Dispatched.handler 为 null、取不到 mca，否则会误判白名单 → 错误的签名 403。
-        if ($status === Dispatcher::FOUND) {
+        //仅对注解控制器(#[AutoController]/#[Controller])做校验，与原 AOP 切面的切入范围一致：
+        //routes.php 中的闭包路由(健康检查 / favicon 等)保持公开，不走签名/解密/鉴权。
+        if ($status === Dispatcher::FOUND && $this->isAnnotatedController($dispatched)) {
             //获取当前路由白名单值（Dispatched 已就绪，getRouteMca 取权威路由）
             $whiteVal = ApiServer::getRouteVal();
             //验证接口签名
             $this->checkSign($request, $whiteVal);
-            //接口数据解密
+            //接口数据解密：解密成功会把带 parsedBody 的新请求写入 Context，这里取回并向下传递；
+            //否则管线末端 CoreMiddleware::process() 会用传入的原请求覆盖 Context，控制器读不到解密后的参数。
+            $before = Context::get(ServerRequestInterface::class);
             $this->dataDecryption($whiteVal);
+            $after = Context::get(ServerRequestInterface::class);
+            if ($after instanceof ServerRequestInterface && $after !== $before) {
+                $request = $after;
+            }
             //验证登录：命中 TOKEN 白名单 / 非正式环境 debug 则跳过，否则交由 checkAuth（传入解密后的请求）
             if (!CheckVal::checkInStatus(GlobalConf::WHITE_TYPE_TOKEN, $whiteVal)
                 && !(!Server::isProd() && get_header_val('Client-Debug'))) {
-                $authReq = Context::get(ServerRequestInterface::class) ?? $request;
-                $this->checkAuth($authReq);
+                $this->checkAuth($request);
             }
         }
 
         return $handler->handle($request);
+    }
+
+    /**
+     * 路由处理器是否为注解控制器（类上有 #[AutoController] 或 #[Controller]）。
+     * 闭包路由、未加控制器注解的类返回 false。
+     */
+    protected function isAnnotatedController(Dispatched $dispatched): bool
+    {
+        $callback = $dispatched->handler?->callback;
+        if (is_array($callback)) {
+            $class = $callback[0] ?? null;
+        } elseif (is_string($callback)) {
+            //routes.php 中 'Class@method' / 'Class::method' 写法
+            $class = preg_split('/@|::/', $callback)[0];
+        } else {
+            return false;
+        }
+        if (!is_string($class) || $class === '') {
+            return false;
+        }
+
+        return AnnotationCollector::getClassAnnotation($class, AutoController::class) !== null
+            || AnnotationCollector::getClassAnnotation($class, Controller::class) !== null;
     }
 
     /**
@@ -134,6 +168,11 @@ abstract class AbstractModuleBeforeMiddleware implements MiddlewareInterface
             }
             //aes解密$rawBody
             $postRawBody = OpenSslCrypt::decrypt($postRawBody, $aesKey);
+            //解密失败(密文损坏 / AES key 不对)直接拒绝，不能当作空请求放行。
+            //注：OpenSSL 3.2+ 对篡改的 Client-Key 做 RSA 隐式拒绝，会返回随机 key 而不是失败，最终也落在这里。
+            if ($postRawBody === false) {
+                throw new HttpException('Bad Request', RcodeConf::ERROR_BAD);
+            }
         }
         $post = $postRawBody ? json_to_array($postRawBody) : [];
         //!(非正式环境debug||白名单)

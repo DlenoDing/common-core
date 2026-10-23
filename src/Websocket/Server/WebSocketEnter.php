@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dleno\CommonCore\Websocket\Server;
 
+use Dleno\CommonCore\Tools\Output\ErrorOutLog;
 use Dleno\CommonCore\Websocket\Component\WsServerComponent;
 use Dleno\CommonCore\Websocket\Component\WsTokenComponent;
 use Dleno\CommonCore\Websocket\Contract\WsHookInterface;
@@ -43,18 +44,45 @@ class WebSocketEnter implements OnMessageInterface, OnOpenInterface, OnCloseInte
      */
     public function onOpen($server, $request): void
     {
-        //服务器固定时区运行
-        date_default_timezone_set(config('app.default_time_zone', 'Asia/Shanghai'));
+        //Hyperf 在握手协程的 defer 中调用 onOpen，异常只被 defer 包装打印到控制台(不进错误日志、不通知)，
+        //连接仍保持打开但注册/绑定/afterOpen 只完成了一部分。这里兜底：记录错误并断开本连接，
+        //由 onClose 清理已写入的注册/绑定。
+        try {
+            //服务器固定时区运行
+            date_default_timezone_set(config('app.default_time_zone', 'Asia/Shanghai'));
 
-        //前置钩子(默认 no-op)
-        $this->wsHook->beforeOpen($server, $request);
+            //前置钩子(默认 no-op)
+            $this->wsHook->beforeOpen($server, $request);
 
-        //同步执行:确保握手后客户端立即发来的消息能读到已完成的绑定数据(裸 go() 异步会产生绑定竞态)
-        get_inject_obj(WsServerComponent::class)->registerClient($request->fd);
-        get_inject_obj(WsTokenComponent::class)->setBind($request->fd);
+            //同步执行:确保握手后客户端立即发来的消息能读到已完成的绑定数据(裸 go() 异步会产生绑定竞态)
+            get_inject_obj(WsServerComponent::class)->registerClient($request->fd);
+            get_inject_obj(WsTokenComponent::class)->setBind($request->fd);
 
-        //后置钩子(默认 no-op;此刻已注册+绑定→业务可安全 push:欢迎语/上线广播)
-        $this->wsHook->afterOpen($server, $request);
+            //后置钩子(默认 no-op;此刻已注册+绑定→业务可安全 push:欢迎语/上线广播)
+            $this->wsHook->afterOpen($server, $request);
+        } catch (\Throwable $e) {
+            ErrorOutLog::writeLog($e, ErrorOutLog::LOG_ERROR);
+            $this->closeOnOpenFailed($server, (int) $request->fd);
+        }
+    }
+
+    /**
+     * onOpen 失败后断开连接：异步风格 Server 下用 disconnect(fd)，协程风格 Server 下 $server 为 Response。
+     * @param \Swoole\Http\Response|\Swoole\WebSocket\Server $server
+     */
+    protected function closeOnOpenFailed($server, int $fd): void
+    {
+        try {
+            if ($server instanceof \Swoole\WebSocket\Server) {
+                if ($server->isEstablished($fd)) {
+                    $server->disconnect($fd, SWOOLE_WEBSOCKET_CLOSE_SERVER_ERROR, 'server error');
+                }
+            } elseif ($server instanceof \Swoole\Http\Response) {
+                $server->disconnect(SWOOLE_WEBSOCKET_CLOSE_SERVER_ERROR, 'server error');
+            }
+        } catch (\Throwable $e) {
+            ErrorOutLog::writeLog($e, ErrorOutLog::LOG_ERROR, false);
+        }
     }
 
     /**
@@ -66,11 +94,20 @@ class WebSocketEnter implements OnMessageInterface, OnOpenInterface, OnCloseInte
         date_default_timezone_set(config('app.default_time_zone', 'Asia/Shanghai'));
 
         //前置钩子(默认 no-op;此刻绑定仍在→业务可取身份做下线广播)
-        $this->wsHook->beforeClose($server, $fd);
+        //业务钩子异常不能阻断下面的核心清理，否则注册/绑定残留到 TTL，期间在线检查误判、unique 维度误踢
+        try {
+            $this->wsHook->beforeClose($server, $fd);
+        } catch (\Throwable $e) {
+            ErrorOutLog::writeLog($e, ErrorOutLog::LOG_ERROR);
+        }
 
         //同步执行(裸 go() 会丢父协程 Context;且 swoole.use_shortname=Off 时 go() 未定义会崩 worker)
-        get_inject_obj(WsServerComponent::class)->delClient($fd);
-        get_inject_obj(WsTokenComponent::class)->unBind($fd);
+        //注销失败也要解绑(finally)，异常继续抛给 Hyperf 记录
+        try {
+            get_inject_obj(WsServerComponent::class)->delClient($fd);
+        } finally {
+            get_inject_obj(WsTokenComponent::class)->unBind($fd);
+        }
 
         //后置钩子(默认 no-op;绑定已删,如需身份应在 beforeClose 捕获)
         $this->wsHook->afterClose($server, $fd);

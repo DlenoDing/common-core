@@ -21,10 +21,7 @@ use Hyperf\JsonRpc\JsonRpcPoolTransporter;
 use Hyperf\JsonRpc\JsonRpcTransporter;
 use Hyperf\Crontab\Process\CrontabDispatcherProcess;
 use Hyperf\ExceptionHandler\Listener\ErrorExceptionHandler;
-use Hyperf\Serializer\Serializer;
-use Hyperf\Serializer\SerializerFactory;
 use Hyperf\Coroutine\Coroutine;
-use Hyperf\Contract\NormalizerInterface;
 use Hyperf\HttpServer\CoreMiddleware;
 use Hyperf\HttpServer\Router\DispatcherFactory;
 use Hyperf\Database\Commands\Ast\ModelUpdateVisitor as AstModelUpdateVisitor;
@@ -70,8 +67,9 @@ class ConfigProvider
                 //JsonRpc连接池-对端jsonrpc时才有用，jsonrpc-http使用的HttpTransporter
                 JsonRpcTransporter::class    => JsonRpcPoolTransporter::class,
 
-                //JsonRpc返回 PHP 对象
-                NormalizerInterface::class   => new SerializerFactory(Serializer::class),
+                //NormalizerInterface 不在包内绑定：hyperf/serializer 自身 ConfigProvider 也绑定它且加载在本包之后，包内覆盖不住；
+                //且 Hyperf 3.2.0 的 Serializer 与 symfony/serializer 7.x 签名不兼容，绑定 SerializerFactory 会 Fatal。
+                //JsonRpc 默认用 SimpleNormalizer(返回数组)，需要还原 PHP 对象见 README「JsonRpc / MQ RPC」。
 
                 //HTTP 路由核心：Hyperf 未在自身 ConfigProvider 绑定这两个，故包内自注入即可生效（业务可在 app 覆盖）。
                 //注：RequestParserInterface / RequestInterface 因 Hyperf 自身 ConfigProvider 也绑、包内覆盖不住，

@@ -386,7 +386,8 @@ class BaseModel extends Model
         } elseif ($this->splitMode == self::SPLIT_MODE_DAY) {
             $tableName .= date('Y-m-d');
         } elseif ($this->splitMode == self::SPLIT_MODE_WEEK) {
-            $tableName .= date('Y-W');
+            //ISO 周号必须配 ISO 周所属年份(o)：用日历年(Y)时年末/年初几天会算成上一年第 1 周等错误表名
+            $tableName .= date('o-W');
         } else {
             $tableName = $this->baseTable;
         }
