@@ -13,6 +13,8 @@ declare(strict_types=1);
 namespace Dleno\CommonCore;
 
 use Dleno\HyperfEnvMulti\EnvLoader;
+use Dleno\CommonCore\Base\AsyncQueue\DriverFactoryResolver;
+use Hyperf\AsyncQueue\Driver\DriverFactory;
 use Hyperf\AsyncQueue\Listener\ReloadChannelListener;
 use Hyperf\Command\Listener\FailToHandleListener;
 use Hyperf\JsonRpc\JsonRpcPoolTransporter;
@@ -60,6 +62,10 @@ class ConfigProvider
 
                 //decimal 精度(默认会转float)
                 AstModelUpdateVisitor::class => ModelUpdateVisitor::class,
+
+                //AsyncQueue:框架 DriverFactory 与包内 BaseDriverFactory 共用同一实例(hash tag channel + 动态队列),
+                //使 dispatch()/queue:* 命令/框架 ConsumerProcess 与 AsyncQueue::push/BaseQueueConsumer 读写同一批 Redis 键。
+                DriverFactory::class         => DriverFactoryResolver::class,
 
                 //JsonRpc连接池-对端jsonrpc时才有用，jsonrpc-http使用的HttpTransporter
                 JsonRpcTransporter::class    => JsonRpcPoolTransporter::class,

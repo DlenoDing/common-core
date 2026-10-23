@@ -114,7 +114,7 @@ class Strings
      * 获取Hashids对象
      * @param string $salt
      * @param int $minHashLength
-     * @param null $alphabet
+     * @param null|string $alphabet 为空则用 Hashids 默认字母表
      * @return Hashids
      */
     public static function getHashids(

@@ -8,6 +8,7 @@ use Dleno\CommonCore\Conf\RcodeConf;
 use Dleno\CommonCore\Exception\Http\HttpException;
 use Hyperf\Codec\Json;
 use Hyperf\Contract\Arrayable;
+use Hyperf\Contract\Htmlable;
 use Hyperf\Contract\Jsonable;
 use Hyperf\HttpMessage\Server\ResponsePlusProxy;
 use Hyperf\HttpMessage\Stream\SwooleStream;
@@ -41,7 +42,7 @@ class CoreMiddleware extends \Hyperf\HttpServer\CoreMiddleware
     /**
      * Transfer the non-standard response content to a standard response object.
      *
-     * @param null|array|Arrayable|Jsonable|ResponseInterface|string $response
+     * @param null|array|Arrayable|Htmlable|Jsonable|ResponseInterface|string $response
      */
     protected function transferToResponse($response, ServerRequestInterface $request): ResponsePlusInterface
     {
@@ -66,6 +67,12 @@ class CoreMiddleware extends \Hyperf\HttpServer\CoreMiddleware
         if ($response instanceof Jsonable) {
             return $this->response()
                         ->addHeader('content-type', 'application/json')
+                        ->setBody(new SwooleStream((string)$response));
+        }
+
+        if ($response instanceof Htmlable) {
+            return $this->response()
+                        ->addHeader('content-type', 'text/html')
                         ->setBody(new SwooleStream((string)$response));
         }
 

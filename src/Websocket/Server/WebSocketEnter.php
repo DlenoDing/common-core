@@ -12,7 +12,7 @@ use Hyperf\Contract\OnCloseInterface;
 use Hyperf\Contract\OnMessageInterface;
 use Hyperf\Contract\OnOpenInterface;
 use Hyperf\Di\Annotation\Inject;
-use Swoole\Websocket\Frame;
+use Swoole\WebSocket\Frame;
 
 use function Hyperf\Config\config;
 
@@ -90,6 +90,9 @@ class WebSocketEnter implements OnMessageInterface, OnOpenInterface, OnCloseInte
             $pongFrame         = new Frame();
             $pongFrame->opcode = WEBSOCKET_OPCODE_PONG;
             $server->push($frame->fd, $pongFrame);
+            $this->heartbeat($server, $frame);
+        //协议级 Pong 帧(open_websocket_pong_frame=true 时交由 onMessage)→ 仅续约,不回复,也不进业务路由
+        } elseif ($frame->opcode === WEBSOCKET_OPCODE_PONG) {
             $this->heartbeat($server, $frame);
         //文本 "ping" 心跳(兼容浏览器等无法主动发协议 Ping 的客户端) → 回复文本 "pong"
         //严格 === 比较,避免业务消息内容恰为数字(如 "9")时被误判为心跳

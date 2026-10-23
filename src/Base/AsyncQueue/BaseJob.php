@@ -33,6 +33,24 @@ abstract class BaseJob extends Job
     }
 
     /**
+     * Hyperf 3.2 JobInterface::getPoolName()(原 getQueueName):框架 dispatch() 按它从 DriverFactory 取驱动。
+     * 返回本 Job 的 $queue,并在驱动未注册时按 getConfig() 动态注册(与 AsyncQueue::push 同一逻辑),
+     * 使 dispatch($job) 与 AsyncQueue::push($job) 落到同一队列。
+     */
+    public function getPoolName(): string
+    {
+        $name    = $this->getQueue() ?: 'default';
+        $factory = get_inject_obj(BaseDriverFactory::class);
+        if (!$factory->has($name)) {
+            $config = $this->getConfig();
+            if (is_array($config) && !empty($config)) {
+                $factory->set($name, $config);
+            }
+        }
+        return $name;
+    }
+
+    /**
      * 自定义 async_queue 对应的$this->queue配置项（动态queue时才需要处理此函数）
      * @return array
      */

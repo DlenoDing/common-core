@@ -1,14 +1,14 @@
 # dleno/common-core
 
-`dleno/common-core` 是 Dleno Hyperf 3.1 项目的公共核心包，负责沉淀 HTTP/RPC/Model/AMQP/AsyncQueue/WebSocket 等基础能力，以及项目通用工具、全局函数、异常输出、日志输出、分布式锁和示例模板。
+`dleno/common-core` 是 Dleno Hyperf 3.2 项目的公共核心包，负责沉淀 HTTP/RPC/Model/AMQP/AsyncQueue/WebSocket 等基础能力，以及项目通用工具、全局函数、异常输出、日志输出、分布式锁和示例模板。
 
 它的定位是“框架基座 + 业务可接入的公共组件”，不是一个完整业务应用。业务项目只需要安装包、补齐少量 DI 绑定和业务策略，就可以复用统一的请求解析、输出格式、模型能力、队列封装、WebSocket 连接管理和在线检查能力。
 
 ## 环境要求
 
-- PHP `>= 8.1`
-- Swoole `>= 5.0`
-- Hyperf `~3.1`
+- PHP `>= 8.4`
+- Swoole `>= 6.2`
+- Hyperf `~3.2`
 - ext-curl
 - WebSocket 功能依赖 Redis `7.4+` 的 `HEXPIRE` 能力
 
@@ -21,7 +21,7 @@
 ## 安装
 
 ```bash
-composer require dleno/common-core:^3.1
+composer require dleno/common-core:~3.2.0
 ```
 
 安装后包内 `ConfigProvider` 会自动生效：
@@ -38,6 +38,25 @@ composer require dleno/common-core:^3.1
 ```bash
 php bin/hyperf.php vendor:publish dleno/common-core
 ```
+
+## 从 3.1 升级
+
+3.2 版本跟随 Hyperf 3.2，要求 PHP `>= 8.4`、Swoole `>= 6.2`；`dleno/hyperf-env-multi`、`dleno/dingtalk` 需同步到 `~3.2.0`。业务项目需要跟着调整：
+
+- `config/autoload/logger.php`：`LoggerConfig::getDefaultConfig()` 改为返回 Hyperf 3.2 的 `['default' => ..., 'channels' => [...]]` 结构。自定义分组以参数传入：
+
+  ```php
+  return \Dleno\CommonCore\Logger\LoggerConfig::getDefaultConfig([
+      'custom' => ['handlers' => [\Dleno\CommonCore\Logger\LoggerConfig::fileHandler('custom-info.log', \Monolog\Level::Info)]],
+  ]);
+  ```
+
+  旧写法 `array_merge(LoggerConfig::getDefaultConfig(), [...])` 会把自定义分组放到 `channels` 之外，**静默失效**。
+- `config/autoload/cache.php`：改为 `['default' => 'default', 'stores' => ['default' => [...]]]`。
+- 自定义 AsyncQueue Job 如覆盖了 `getQueueName()`，改为 `getPoolName()`。`BaseJob::getPoolName()` 返回 `$queue` 并按需注册动态队列，因此 `Hyperf\AsyncQueue\dispatch($job)` 与 `AsyncQueue::push($job)` 落到同一队列。
+- 框架 `DriverFactory` 现绑定为包内 `BaseDriverFactory` 同一实例：`dispatch()`、`#[AsyncQueueMessage]`、`queue:*` 命令和框架 `ConsumerProcess` 统一使用带 Redis hash tag 的 channel（如 `{queue}:waiting`）。3.1 时经这些框架入口写入未加 tag 的 channel（如 `queue:waiting`）的存量消息，升级前请消费完或自行迁移。
+- 包内 `ResumeExitCoordinatorListener` 已删除（Hyperf 3.2 同步移除；命令结束时由框架 `Command` 自行唤醒退出协调器）。
+- 测试基于 PHPUnit 11：`Hyperf\Testing\TestCase` 每个用例都会重建容器并再次注册 error handler，PHPUnit 会报 risky，可参考 `dleno/hyperf-diy` 的 `test/TestCase.php` 在 tearDown 中还原。
 
 ## 接入清单
 
@@ -417,6 +436,12 @@ Composer 文件校验：
 
 ```bash
 composer validate --strict
+```
+
+静态分析（PHPStan level 1，配置见 `phpstan.neon`）：
+
+```bash
+composer analyse
 ```
 
 ## 目录结构

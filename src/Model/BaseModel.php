@@ -28,6 +28,7 @@ use function Hyperf\Support\class_basename;
  *
  * @package Dleno\CommonCore\Model
  * @mixin \Dleno\CommonCore\Model\EloquentBuilder  自定义查询构造器(pager/groupCount/insertOnDuplicate/whereFullTextDiy 等),令 IDE 可提示这些方法
+ * @phpstan-consistent-constructor query()/tableName() 内 new static(...),子类须保持构造签名兼容
  */
 class BaseModel extends Model
 {

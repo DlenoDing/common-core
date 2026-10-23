@@ -169,7 +169,8 @@ class Server
      */
     public static function swooleLoaderCheck()
     {
-        if (!extension_loaded('swoole_loader')) {
+        //swoole_get_license 由 swoole_loader 扩展提供;未加载或该版本无此函数时不做授权域校验
+        if (!extension_loaded('swoole_loader') || !function_exists('swoole_get_license')) {
             return true;
         }
         $request = get_inject_obj(RequestInterface::class);

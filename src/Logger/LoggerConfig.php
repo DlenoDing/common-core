@@ -22,9 +22,9 @@ class LoggerConfig
 
     /**
      * 日志分组(group)统一定义——单一真相源。
-     * group 决定写入「哪一套文件」(logger.php 的顶层键即 group);Logger 等处一律引用这些常量,勿散落字面量。
-     * 业务方要新增自定义 group:在 config/autoload/logger.php 的自定义段加一组(可用 fileHandler() 生成 handler),
-     * 再用 Logger::groupLog($channel, '自定义组名') 统一写入。
+     * group 决定写入「哪一套文件」(Hyperf 3.2 起即 logger.php 中 channels 下的键);Logger 等处一律引用这些常量,勿散落字面量。
+     * 业务方要新增自定义 group:经 getDefaultConfig($customGroups) 传入(可用 fileHandler() 生成 handler),
+     * 再用 Logger::groupLog('自定义组名'[, $channel]) 统一写入。
      */
     const GROUP_DEFAULT  = 'default';
     const GROUP_SQL      = 'sql';
@@ -50,10 +50,14 @@ class LoggerConfig
     ];
 
     /**
-     * 获取默认配置(由分组/级别映射工厂生成,等价于原先逐个分组写死的 12 个 handler 块)
+     * 获取默认配置(由分组/级别映射工厂生成,等价于原先逐个分组写死的 12 个 handler 块)。
+     * 返回 Hyperf 3.2 的 logger 配置结构:['default' => 默认分组, 'channels' => [分组 => 配置]]。
+     * 业务自定义分组经 $customGroups 传入(同名覆盖内置分组),勿再与返回值顶层 array_merge(会落在 channels 之外而不生效)。
+     *
+     * @param array $customGroups 业务自定义分组 [分组名 => ['handlers' => [...]] 或 ['handler' => ...]]
      * @return array
      */
-    public static function getDefaultConfig(): array
+    public static function getDefaultConfig(array $customGroups = []): array
     {
         $maxFiles = (int) env('LOG_MAX_FILES', self::DEFAULT_MAX_FILES);
 
@@ -65,12 +69,15 @@ class LoggerConfig
             }
             $config[$group] = ['handlers' => $handlers];
         }
-        return $config;
+        return [
+            'default'  => self::GROUP_DEFAULT,
+            'channels' => array_merge($config, $customGroups),
+        ];
     }
 
     /**
      * 单个文件日志 handler 配置(LogFileHandler + 统一 LineFormatter)。公开供业务方扩展自定义分组/级别时复用:
-     *   在 config/autoload/logger.php 的自定义段直接 LoggerConfig::fileHandler('xxx-debug.log', Level::Debug) 生成,
+     *   在 config/autoload/logger.php 的自定义分组里直接 LoggerConfig::fileHandler('xxx-debug.log', Level::Debug) 生成,
      *   即可与包内日志保持同一格式/目录/轮转策略。
      *
      * @param string   $file     日志文件名(置于 runtime/logs/api/ 下)

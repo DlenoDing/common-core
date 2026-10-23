@@ -31,6 +31,8 @@ class CommonExceptionHandler extends ExceptionHandler
             if (Db::transactionLevel() > 0) {
                 //首次beginTransaction为开始一个事务，后续的每次调用beginTransaction为创建事务保存点。
                 //rollBack回滚也只是回滚到上一个保存点，并不是回滚整个事务
+                //Db 门面 docblock 只声明 rollBack(),实际转发到 Connection::rollBack($toLevel = null)
+                // @phpstan-ignore-next-line
                 Db::rollBack(0);//回滚整个事务
             }
         }

@@ -1,0 +1,28 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: PHP 8.4 / Swoole 6.2
+    runs-on: ubuntu-latest
+    # 挂住(如进程无法退出)按失败处理,避免无限等待
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate, install, lint, analyse and test
+        run: |
+          docker run --rm -v "$PWD":/app -w /app hyperf/hyperf:8.4-alpine-v3.22-swoole-v6.2 sh -c '
+            set -e
+            php -v | head -1
+            php --ri swoole | grep -i "^version"
+            composer validate --strict
+            composer update --no-interaction --no-progress --prefer-dist
+            find src -name "*.php" -print0 | xargs -0 -n1 php -l > /dev/null
+            composer analyse
+            composer test
+          '

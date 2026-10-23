@@ -28,12 +28,12 @@ class Logger
     }
 
     /**
-     * 通用「自定义分组」日志:写入【业务方在 config/autoload/logger.php 自定义段新增的附加分组】。
+     * 通用「自定义分组」日志:写入【业务方在 config/autoload/logger.php 经 getDefaultConfig($customGroups) 新增的附加分组】。
      *
      * 内置 default/sql/api/business 四组各有专用方法(systemLog/apiLog/sqlLog/businessLog),不必、也不应经此;
-     * 本方法只为业务【额外自定义的分组】提供统一入口:先在 logger.php 自定义段定义该 group
+     * 本方法只为业务【额外自定义的分组】提供统一入口:先在 logger.php 的 channels 中定义该 group
      * (可用 {@see LoggerConfig::fileHandler()} 生成 handler),再 Logger::groupLog('自定义组名'[, $channel]) 写入。
-     * 注意:$group 必须是 logger.php 已定义的组,否则 Hyperf LoggerFactory 抛 InvalidConfigException(无回退)。
+     * 注意:$group 必须是 logger.php channels 中已定义的组,否则 Hyperf LoggerFactory 抛 InvalidConfigException(无回退)。
      *
      * @param string $group   业务自定义分组名(须在 logger.php 已定义;内置四组请用上面的专用方法)
      * @param string $channel 日志频道名(仅作行内 %channel% 标签,不决定写哪个文件)

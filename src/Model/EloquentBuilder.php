@@ -37,10 +37,8 @@ class EloquentBuilder extends Builder
     /**
      * 复刻原 fork __call：insert / insertGetId 临时关闭表别名(插入不走别名),执行后恢复;
      * 其余转发框架原 __call(parent::__call ≡ 原 __execCall,已逐字核对一致)。
-     * @param string $method
-     * @param array  $parameters
      */
-    public function __call($method, $parameters)
+    public function __call(string $method, array $parameters): mixed
     {
         $insertMethods = [
             'insert',

@@ -14,6 +14,7 @@ use Hyperf\HttpServer\Annotation\PatchMapping;
 use Hyperf\HttpServer\Annotation\PostMapping;
 use Hyperf\HttpServer\Annotation\PutMapping;
 use Hyperf\HttpServer\Annotation\RequestMapping;
+use Hyperf\HttpServer\Exception\InvalidMappingException;
 use Hyperf\HttpServer\Router\DispatcherFactory;
 use Hyperf\Collection\Arr;
 use Hyperf\Stringable\Str;
@@ -99,7 +100,8 @@ class RouterDispatcherFactory extends DispatcherFactory
             }
 
             // Rewrite by annotation @Middleware for Controller.
-            $options['middleware'] = array_unique($methodMiddlewares);
+            //中间件为 PriorityMiddleware 对象(无 __toString),须按属性比较去重;默认 SORT_STRING 会致命错误
+            $options['middleware'] = array_values(array_unique($methodMiddlewares, SORT_REGULAR));
 
             $path = $this->formatRoutePath($path);
 
@@ -214,9 +216,6 @@ class RouterDispatcherFactory extends DispatcherFactory
             foreach ($mappingAnnotations as $mappingAnnotation) {
                 /** @var Mapping $mapping */
                 if ($mapping = $values[$mappingAnnotation] ?? null) {
-                    if (! isset($mapping->methods) || ! isset($mapping->options)) {
-                        continue;
-                    }
                     $methodOptions = Arr::merge($options, $mapping->options);
                     // Rewrite by annotation @Middleware for method.
                     $methodOptions['middleware'] = $options['middleware'];
@@ -231,6 +230,10 @@ class RouterDispatcherFactory extends DispatcherFactory
                         $path = $mapping->path;
                     }
                     $path = $this->formatRoutePath($path);
+
+                    if (empty($mapping->methods)) {
+                        throw new InvalidMappingException(sprintf('The http methods of path %s cannot be empty.', $path));
+                    }
 
                     $router->addRoute($mapping->methods, $path, [$className, $methodName], $methodOptions);
                 }

@@ -16,15 +16,8 @@ class AsyncQueue
      */
     public static function push(BaseJob $job, int $delay = 0)
     {
-        $name   = $job->getQueue() ?: 'default';
-        $driver = get_inject_obj(BaseDriverFactory::class);
-        if (!$driver->has($name)) {
-            $config = $job->getConfig();
-            if (is_array($config) && !empty($config)) {
-                $driver->set($name, $config);
-            }
-        }
-        return $driver->get($name)
-                      ->push($job, $delay);
+        //getPoolName() 负责解析队列名并按需动态注册驱动(与框架 dispatch() 共用)
+        return get_inject_obj(BaseDriverFactory::class)->get($job->getPoolName())
+                                                       ->push($job, $delay);
     }
 }

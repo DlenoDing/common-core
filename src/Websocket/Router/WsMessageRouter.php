@@ -22,7 +22,7 @@ use Hyperf\WebSocketServer\Exception\Handler\WebSocketExceptionHandler;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\UriInterface;
-use Swoole\Websocket\Frame;
+use Swoole\WebSocket\Frame;
 use Hyperf\Context\Context;
 use Hyperf\WebSocketServer\Context as WsContext;
 
