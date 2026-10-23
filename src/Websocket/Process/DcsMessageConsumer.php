@@ -8,7 +8,9 @@ use Dleno\CommonCore\Base\AsyncQueue\BaseQueueConsumer;
 use Dleno\CommonCore\Websocket\Support\MessageQueueRouting;
 use Dleno\CommonCore\Websocket\Support\WsProcessSwitch;
 use Dleno\CommonCore\Websocket\Support\WsQueueConfig;
+use Hyperf\Process\AbstractProcess;
 use Hyperf\Process\Annotation\Process;
+use Psr\Container\ContainerInterface;
 
 /**
  * WS 实时消息消费进程（纯基建，归包锁死）。
@@ -21,6 +23,17 @@ use Hyperf\Process\Annotation\Process;
 class DcsMessageConsumer extends BaseQueueConsumer
 {
     use MessageQueueRouting;//队列名/配置段(实时消息通道,与 PushMessageJob 同一真相)
+
+    public function __construct(ContainerInterface $container)
+    {
+        //BootProcessListener 先实例化全部进程、后判 isEnable:门禁未通过时本进程不会启动,
+        //只做 AbstractProcess 初始化,不注册/构造队列驱动(未配置 async_queue 的项目也能正常启动)
+        if (!$this->isEnable(null)) {
+            AbstractProcess::__construct($container);
+            return;
+        }
+        parent::__construct($container);
+    }
 
     public function getQueue()
     {

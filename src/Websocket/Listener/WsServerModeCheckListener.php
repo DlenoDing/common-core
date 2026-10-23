@@ -9,6 +9,7 @@ use Hyperf\Contract\ConfigInterface;
 use Hyperf\Event\Annotation\Listener;
 use Hyperf\Event\Contract\ListenerInterface;
 use Hyperf\Framework\Event\BeforeMainServerStart;
+use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Redis;
 use Swoole\Coroutine;
 
@@ -101,13 +102,26 @@ class WsServerModeCheckListener implements ListenerInterface
             }
         };
 
+        //本监听在主进程(fork 前)执行:探测用过的连接若留在池中,会被所有 worker/自定义进程继承并共用同一 socket,
+        //并发命令的应答串到别的进程(队列消息串线、丢失)。探测后关闭池内空闲连接,子进程各自重新建连。
+        $run = static function () use ($probe): array {
+            try {
+                return $probe();
+            } finally {
+                try {
+                    get_inject_obj(PoolFactory::class)->getPool('default')->flushAll();
+                } catch (\Throwable $e) {
+                }
+            }
+        };
+
         $res = [false, false, ''];
         if (Coroutine::getCid() === -1) {
-            \Swoole\Coroutine\run(function () use (&$res, $probe) {
-                $res = $probe();
+            \Swoole\Coroutine\run(function () use (&$res, $run) {
+                $res = $run();
             });
         } else {
-            $res = $probe();
+            $res = $run();
         }
         [$reachable, $supported, $version] = $res;
 

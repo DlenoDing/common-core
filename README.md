@@ -55,6 +55,9 @@ php bin/hyperf.php vendor:publish dleno/common-core
 - `config/autoload/cache.php`：改为 `['default' => 'default', 'stores' => ['default' => [...]]]`。
 - 自定义 AsyncQueue Job 如覆盖了 `getQueueName()`，改为 `getPoolName()`。`BaseJob::getPoolName()` 返回 `$queue` 并按需注册动态队列，因此 `Hyperf\AsyncQueue\dispatch($job)` 与 `AsyncQueue::push($job)` 落到同一队列。
 - 框架 `DriverFactory` 现绑定为包内 `BaseDriverFactory` 同一实例：`dispatch()`、`#[AsyncQueueMessage]`、`queue:*` 命令和框架 `ConsumerProcess` 统一使用带 Redis hash tag 的 channel（如 `{queue}:waiting`）。3.1 时经这些框架入口写入未加 tag 的 channel（如 `queue:waiting`）的存量消息，升级前请消费完或自行迁移。
+- `async_queue.*` 不要设置 3.2 配置模板里的 `enable`：设为 true 时框架会为该池自动再起一个 `queue.<pool>` 消费进程，与 `BaseQueueConsumer` 重复消费同一队列，且不受 `isEnable`/local 开关约束。
+- 继承 Hyperf `ConsumerProcess` 的消费进程在 3.2 只认 `$pool`，只写 `$queue` 会静默改为消费 default 池；动态队列请继承 `BaseQueueConsumer`。
+- 框架 `dispatch($job)` 在 3.2 投递到 Job 的 `$queue`（3.1 固定进 default 池，未绑定 DriverFactory 的项目会写入无人消费的 `queue:*`）；若用过 `dispatch()`/`#[AsyncQueueMessage]`，升级前清点无 tag 的 `queue:waiting/delayed/reserved/timeout/failed`。
 - 包内 `ResumeExitCoordinatorListener` 已删除（Hyperf 3.2 同步移除；命令结束时由框架 `Command` 自行唤醒退出协调器）。
 - 测试基于 PHPUnit 11：`Hyperf\Testing\TestCase` 每个用例都会重建容器并再次注册 error handler，PHPUnit 会报 risky，可参考 `dleno/hyperf-diy` 的 `test/TestCase.php` 在 tearDown 中还原。
 
@@ -196,6 +199,7 @@ return [
 - API/RPC/Error 输出日志封装。
 - HTTP/WS Controller 响应日志切面。
 - 按渠道输出 stdout、system、api、sql、business 日志。
+- `LogFileHandler` 写入期间不改动进程级错误处理器栈：Swoole 文件 hook 下写日志让出协程时，其他协程的 warning 仍交给 Hyperf 的 ErrorExceptionHandler，不会被 monolog 临时处理器吞掉；写入失败仍按 monolog 关闭重开并重试一次。
 - 错误输出可读取业务 `config/autoload/dingtalk.php` 的 `dingtalk.trace` 配置发送异常追踪通知。
 
 ### Model 与数据库
@@ -377,7 +381,7 @@ WebSocket 配置见 `config/autoload/websocket.php`，模板来源为 `publish/w
 - `APP_ENV`: 当前运行环境；存在 `.env.<APP_ENV>` 时会覆盖 `.env` 中的同名变量。
 - `IS_PROD`: 强制判定为正式环境；未设置时 `config('app_env') === 'prod'` 也会视为正式环境。
 - `ENABLE_HTTP`: 是否启用 HTTP server 相关基础中间件。
-- `ENABLE_WS`: 是否启用 WebSocket 相关进程和中间件。
+- `ENABLE_WS`: 是否启用 WebSocket 相关进程和中间件。未启用（或 local 未开 `websocket.local_enable`）时，WS 消费进程不注册、不构造队列驱动，未配置 `async_queue` 的项目也可正常启动，无需在业务侧清除进程注解。
 - `HTTP_INIT_MIDDLEWARE_ENABLE`: 是否自动注入 HTTP 初始化中间件和模块前置中间件，默认开启。
 - `WS_AUTH_MIDDLEWARE_ENABLE`: 是否自动注入 WS 鉴权中间件，默认开启。
 - `LOG_MAX_FILES`: 默认日志文件保留数量。

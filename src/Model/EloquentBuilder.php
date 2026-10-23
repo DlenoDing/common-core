@@ -214,6 +214,10 @@ class EloquentBuilder extends Builder
     {
         $perPage = $perPage ?? rpc_context_get(RpcContextConf::PER_PAGE);
         $perPage = intval($perPage ?? $this->model->getPerPage());
+        //页大小须为正:0/负数(含外部传入)回落模型默认页大小(Hyperf 3.2 的 limit() 对负数抛异常)
+        if ($perPage <= 0) {
+            $perPage = $this->model->getPerPage();
+        }
         $this->model->setPerPage($perPage);
         $page = $page ?? rpc_context_get(RpcContextConf::PAGE);
         $page = intval($page ?? 1);
