@@ -264,6 +264,20 @@ return [
 - `examples/AsyncQueue`
 - `examples/AsyncQueue/Dynamic`
 
+### 进程停止与容器宽限
+
+`ProcessStopHandler` 仅在 PROCESS 范围注册 SIGTERM / SIGINT：先设置 `ProcessManager::setRunning(false)`，再唤醒 `WORKER_EXIT`，使分钟调度及 HTTP 池空闲维护协程结束等待。不会额外接管 HTTP Worker，不强制取消在途协程、不提前 ACK，也不因停止信号重发业务请求。HTTP 池关闭空闲连接，在途请求完成后关闭其连接；同一在途任务的后续请求仍可新建连接完成。
+
+`BaseQueueConsumer` 和包内 `Process\CrontabDispatcherProcess` 的 `recvTimeout=1.0` 仅缩短继承自 Hyperf AbstractProcess 的**内部消息管道读取等待**，不是 Redis 取消息超时、HTTP 请求超时或任务 `handle_timeout`。原消费/确认、reloadChannels 启动恢复、reloadCount、队列名和 hash tag、retry_seconds、框架五秒重启间隔保持不变。调度子类只覆盖该属性，继续继承分钟调度、任务分发和退出流程。
+
+`ENABLE_CRONTAB` 开启时仍只注册框架 `Hyperf\Crontab\Process\CrontabDispatcherProcess` 标识，dependencies 默认将其解析为包内子类；应用仍可在自身 `dependencies.php` 覆盖。不要同时手动注册包内子类、添加 Process 注解或重复注册停止处理器。关闭开关时不注册调度进程。包内不定义 `signal.timeout`，继续沿用框架与应用配置的合并方式。
+
+本修复解决空闲等待，**不保证所有任务十秒内结束**。应用负责设置适合最长在途任务及框架退出开销的容器停止宽限；十二秒任务在十秒硬上限下仍可能被 SIGKILL，尚未确认的消息需按现有恢复机制处理。不得通过提前确认、清队列或降低业务超时加速退出。
+
+WS 消息/控制消费者继承此次管道等待修正；WS 服务器注册进程仍按原 sleep 周期检查停止标记。AMQP 消费检查原有 running 标记；框架 AMQP 心跳协程在 WORKER_EXIT 后会关闭连接，AMQP 在途确认、RabbitMQ 和 WS 实际业务退出未由本次 Redis/HTTP 定向测试覆盖，须由应用独立验证。其他自定义进程及协程服务器模式同样不承诺十秒退出。
+
+可重复执行的隔离停止验证及边界见 [tests/process-stop/README.md](tests/process-stop/README.md)。升级消费者时：正常 Composer 更新并提交 lock；核对安装版本和源码映射；清理应用中临时的停止处理器、调度进程及队列 recvTimeout 覆盖（先核对其中是否有额外业务逻辑），去掉重复 process/signal 注册；清理容器中旧 DI/注解代理缓存并按应用既有发布流程重建；配置足够的停止宽限并验证在途任务确认。应用 vendor 不应手改，临时 path 仓库、软链接或源码替换须移除。
+
 ### WebSocket
 
 相关目录：

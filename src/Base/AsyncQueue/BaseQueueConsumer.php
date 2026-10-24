@@ -13,6 +13,8 @@ use Psr\Container\ContainerInterface;
 
 class BaseQueueConsumer extends AbstractProcess
 {
+    protected float $recvTimeout = 1.0;
+
     protected string $queue = 'default';
 
     protected DriverInterface $driver;

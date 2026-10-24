@@ -11,6 +11,8 @@ declare(strict_types=1);
  */
 namespace Dleno\CommonCore\Signal;
 
+use Hyperf\Coordinator\Constants;
+use Hyperf\Coordinator\CoordinatorManager;
 use Hyperf\Process\ProcessManager;
 use Hyperf\Signal\SignalHandlerInterface;
 
@@ -27,5 +29,6 @@ class ProcessStopHandler implements SignalHandlerInterface
     public function handle(int $signal): void
     {
         ProcessManager::setRunning(false);
+        CoordinatorManager::until(Constants::WORKER_EXIT)->resume();
     }
 }

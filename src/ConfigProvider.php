@@ -54,6 +54,8 @@ class ConfigProvider
             //基础中间件自动注入（按启用的 server 注入对应基座中间件，与 app middlewares.php 追加合并）。
             'middlewares'  => $this->autoMiddlewares(),
             'dependencies' => [
+                CrontabDispatcherProcess::class => \Dleno\CommonCore\Process\CrontabDispatcherProcess::class,
+
                 //db连接池恒频组件(默认低频组件)[释放连接池中多余的连接]
                 //\Hyperf\DbConnection\Frequency::class => \Hyperf\Pool\ConstantFrequency::class,
 
