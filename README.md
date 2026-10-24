@@ -266,17 +266,25 @@ return [
 
 ### 进程停止与容器宽限
 
-`ProcessStopHandler` 仅在 PROCESS 范围注册 SIGTERM / SIGINT：先设置 `ProcessManager::setRunning(false)`，再唤醒 `WORKER_EXIT`，使分钟调度及 HTTP 池空闲维护协程结束等待。不会额外接管 HTTP Worker，不强制取消在途协程、不提前 ACK，也不因停止信号重发业务请求。HTTP 池关闭空闲连接，在途请求完成后关闭其连接；同一在途任务的后续请求仍可新建连接完成。
+`ProcessStopHandler` 仅在 PROCESS 范围注册 SIGTERM / SIGINT，只设置 `ProcessManager::setRunning(false)`。`WORKER_EXIT` 表示资源清理：它会关闭 AMQP 连接、清空框架 Memory 缓存、释放 server mutex 并停止 Timer 续期，不能在通用停止信号到达时提前触发。正常流程是先结束消费并等待在途回调完成确认及 finally/defer，再由 Hyperf AbstractProcess 清理 Timer 和唤醒 `WORKER_EXIT`。不额外接管 HTTP Worker，不强制取消业务协程、不提前 ACK、不因停止信号重发业务请求。
 
-`BaseQueueConsumer` 和包内 `Process\CrontabDispatcherProcess` 的 `recvTimeout=1.0` 仅缩短继承自 Hyperf AbstractProcess 的**内部消息管道读取等待**，不是 Redis 取消息超时、HTTP 请求超时或任务 `handle_timeout`。原消费/确认、reloadChannels 启动恢复、reloadCount、队列名和 hash tag、retry_seconds、框架五秒重启间隔保持不变。调度子类只覆盖该属性，继续继承分钟调度、任务分发和退出流程。
+默认 RedisDriver 通过 dependencies 解析为包内子类，仅包装框架回调并在 `consume()` 外等待在途回调协程结束（包含业务 defer）；默认 AMQP Consumer 通过框架 PriorityDefinition 接入包内 factory/子类，将约五秒的并发收尾限制改为等待回调协程完成，包含业务 defer。两者都不重写消费/确认/异常恢复/重试逻辑，不设内部退出硬上限，也覆盖框架因消息数量上限触发的正常收尾。`BaseConsumer::waitTimeout=1` 让 AMQP 空闲 channel 定期检查停止标记；这是消费等待检查间隔，不是心跳、业务处理超时或重试间隔，业务子类显式设置仍优先。
 
-`ENABLE_CRONTAB` 开启时仍只注册框架 `Hyperf\Crontab\Process\CrontabDispatcherProcess` 标识，dependencies 默认将其解析为包内子类；应用仍可在自身 `dependencies.php` 覆盖。不要同时手动注册包内子类、添加 Process 注解或重复注册停止处理器。关闭开关时不注册调度进程。包内不定义 `signal.timeout`，继续沿用框架与应用配置的合并方式。
+`BaseQueueConsumer` 和包内 `Process\CrontabDispatcherProcess` 的 `recvTimeout=1.0` 仅缩短继承自 Hyperf AbstractProcess 的**内部消息管道读取等待**，不是 Redis 取消息超时、HTTP 请求超时或任务 `handle_timeout`。原 reloadChannels 启动恢复、reloadCount、队列名和 hash tag、retry_seconds、框架五秒重启间隔保持不变。
 
-本修复解决空闲等待，**不保证所有任务十秒内结束**。应用负责设置适合最长在途任务及框架退出开销的容器停止宽限；十二秒任务在十秒硬上限下仍可能被 SIGKILL，尚未确认的消息需按现有恢复机制处理。不得通过提前确认、清队列或降低业务超时加速退出。
+调度子类保留框架的分钟等待、去重、任务分发和 `getInterval()`。仅在独立 Swoole PROCESS 且策略精确为框架 `WorkerStrategy`、`TaskWorkerStrategy` 或 `ProcessStrategy` 时，增加每秒检查 running 的协程，停止后定向唤醒本进程协调器。这三种策略将业务发到其他 worker 执行；策略子类不在白名单。检查协程在父 handle 异常后的框架清理阶段也会结束，避免阻止进程重启。
 
-WS 消息/控制消费者继承此次管道等待修正；WS 服务器注册进程仍按原 sleep 周期检查停止标记。AMQP 消费检查原有 running 标记；框架 AMQP 心跳协程在 WORKER_EXIT 后会关闭连接，AMQP 在途确认、RabbitMQ 和 WS 实际业务退出未由本次 Redis/HTTP 定向测试覆盖，须由应用独立验证。其他自定义进程及协程服务器模式同样不承诺十秒退出。
+`CoroutineStrategy` 和应用自定义策略不走提前唤醒，继续按框架分钟边界退出。包内 `CrontabExecutor` 在任何 server/task 锁 IO 之前计入已开始任务，在任务协程所有 finally/defer 完成后移出；调度进程交回 AbstractProcess 清理之前等待计数归零。这样也保护框架在停止后的分钟边界分发出的那一批任务。未到点任务若在等待期间按原时机开始，会一起收尾；清理时仍未开始的任务由框架关闭，不提前执行、不重发。该模式的停止宽限需包含等待分钟边界、已开始任务和五秒重启间隔。
 
-可重复执行的隔离停止验证及边界见 [tests/process-stop/README.md](tests/process-stop/README.md)。升级消费者时：正常 Composer 更新并提交 lock；核对安装版本和源码映射；清理应用中临时的停止处理器、调度进程及队列 recvTimeout 覆盖（先核对其中是否有额外业务逻辑），去掉重复 process/signal 注册；清理容器中旧 DI/注解代理缓存并按应用既有发布流程重建；配置足够的停止宽限并验证在途任务确认。应用 vendor 不应手改，临时 path 仓库、软链接或源码替换须移除。
+上述计数只覆盖经过默认包内 Executor 的工作；应用覆盖 Executor 或在监听器、AOP、自定义策略中另起未等待的后台协程，需独立评估。默认跨 worker 策略的快速唤醒也会先等本进程已计入的 Executor 任务完成。共享进程的协程服务器模式不提前唤醒，本次没有用真实共享服务器验证它的完整退出流程；不能据此承诺统一十秒退出。
+
+`ENABLE_CRONTAB` 开启时仍只注册框架 `Hyperf\Crontab\Process\CrontabDispatcherProcess` 标识，dependencies 默认解析为包内子类；关闭开关不注册调度进程。应用自身 dependencies 仍可覆盖调度、Executor、RedisDriver 和 AMQP Consumer；既有 AMQP ConsumerFactory 覆盖及 make() 参数也会保留。自定义 driver、覆盖后的 Consumer 或显式无限 AMQP waitTimeout 不自动获得上述保证。不要重复注册进程或停止处理器。包内不定义 `signal.timeout`，配置合并方式不变。
+
+本修复**不保证所有任务十秒内结束**。容器停止宽限应包含最长剩余任务时间、框架五秒重启间隔及调度开销。例如七秒任务刚开始就停止，安全收尾可能需要约十二秒；任务执行三秒后停止，剩余约四秒加五秒间隔才有机会在十秒内退出。十二秒任务配三十秒宽限可完整完成，十秒硬上限可能被 SIGKILL、消息尚未确认。不得通过提前确认、清队列或降低业务超时加速退出。
+
+空闲 BaseConsumer 每秒会产生一次框架 WaitTimeout 事件，应用对此事件的日志/告警监听器需相应评估。AMQP 的确认仍由框架在回调完成后发送；停止接收后等待在途期间，broker 预取但尚未开始执行的消息可在连接关闭后返回 ready，这不代表业务重复执行。Redis 已出队但正在等待并发槽位的消息也要按原流程完成；`handle_timeout` 的原有到期恢复语义不变，仍需合理配置。WS 消息/控制队列继承 Redis drain 和管道等待修正；WS 注册进程原有 15 秒 sleep 周期不变。未被回调等待的应用后台工作不属于包可自动收尾的在途回调。
+
+可重复执行的隔离回归及证据见 [tests/process-stop/README.md](tests/process-stop/README.md)。消费者升级时正常 Composer 更新并提交 lock，移除临时 path/软链接/源码替换；核对应用临时退出覆盖中的业务逻辑后清除重复实现和 process/signal 注册；按既有流程重建旧 DI/注解代理缓存，配置足够停止宽限并验证实际任务确认。不要手改 vendor。
 
 ### WebSocket
 

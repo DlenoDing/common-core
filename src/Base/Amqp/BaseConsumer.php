@@ -19,6 +19,9 @@ use PhpAmqpLib\Wire\AMQPTable;
  */
 class BaseConsumer extends ConsumerMessage
 {
+    // Poll the running flag without closing the connection used by in-flight callbacks.
+    protected float|int $waitTimeout = 1;
+
     protected string $poolName = 'default';//设置使用的连接池，可在__construct里动态改变
 
     /**

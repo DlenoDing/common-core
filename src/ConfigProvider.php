@@ -55,6 +55,13 @@ class ConfigProvider
             'middlewares'  => $this->autoMiddlewares(),
             'dependencies' => [
                 CrontabDispatcherProcess::class => \Dleno\CommonCore\Process\CrontabDispatcherProcess::class,
+                \Hyperf\Crontab\Strategy\Executor::class => \Dleno\CommonCore\Process\CrontabExecutor::class,
+                \Hyperf\AsyncQueue\Driver\RedisDriver::class => \Dleno\CommonCore\Base\AsyncQueue\RedisDriver::class,
+                // Survive hyperf/amqp's later default binding; application dependencies still take precedence.
+                \Hyperf\Amqp\Consumer::class => new \Hyperf\Di\Definition\PriorityDefinition(
+                    \Dleno\CommonCore\Base\Amqp\ConsumerFactory::class,
+                    1
+                ),
 
                 //db连接池恒频组件(默认低频组件)[释放连接池中多余的连接]
                 //\Hyperf\DbConnection\Frequency::class => \Hyperf\Pool\ConstantFrequency::class,
