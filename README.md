@@ -264,11 +264,34 @@ return [
 - `examples/AsyncQueue`
 - `examples/AsyncQueue/Dynamic`
 
+### v3.2.5 升级说明
+
+- 修复应用继承包内 AMQP ConsumerFactory 时的自身委托，保留应用覆盖及 make 参数透传。
+- Redis 收尾按每次 consume 隔离准备中和运行中的回调，保留在途处理、ACK/retry 和直接 defer。
+- 仅为已有包内 cron 任务延后原生 worker 退出清理，保留锁续期和连接资源；没有任务时沿用父流程，不新增 HTTP Worker 信号。
+- **配置兼容性变化**：包内 AMQP 工厂拒绝心跳0、负数及非整数；省略或null默认15秒。读写超时缺失或null默认30秒，显式值保留。环境变量空字符串经配置帮助类转成0也会报错，请在升级前修正。
+- 本版没有新增强制退出、提前确认、业务请求重发或重试机制。持续MQ不可达时的框架关闭限制仍存在，详见下节及隔离回归记录。
+- 消费者应先正常 Composer 更新并提交 lock，核对实际加载版本和类，再清理临时覆盖及旧代理缓存；保留应用业务恢复逻辑。不要手改 vendor。
+
 ### 进程停止与容器宽限
 
-`ProcessStopHandler` 仅在 PROCESS 范围注册 SIGTERM / SIGINT，只设置 `ProcessManager::setRunning(false)`。`WORKER_EXIT` 表示资源清理：它会关闭 AMQP 连接、清空框架 Memory 缓存、释放 server mutex 并停止 Timer 续期，不能在通用停止信号到达时提前触发。正常流程是先结束消费并等待在途回调完成确认及 finally/defer，再由 Hyperf AbstractProcess 清理 Timer 和唤醒 `WORKER_EXIT`。不额外接管 HTTP Worker，不强制取消业务协程、不提前 ACK、不因停止信号重发业务请求。
+> v3.2.5 要求 AMQP 使用正整数心跳，缺失时默认心跳15秒、读写超时30秒。升级前检查原有零心跳配置及应用临时退出覆盖。协程资源耗尽时的收尾属于已知边界，本版本未扩展处理；退出宽限应按实际任务和依赖故障配置。
+
+`ProcessStopHandler` 仅在 PROCESS 范围注册 SIGTERM / SIGINT，只设置 `ProcessManager::setRunning(false)`。`WORKER_EXIT` 表示资源清理：AMQP 连接沿用框架正心跳协程关闭逻辑；它还会清空框架 Memory 缓存、释放 server mutex 并停止 Timer 续期，不能在通用停止信号到达时提前触发。正常流程是先结束消费并等待在途回调完成确认及 finally/defer，再由 Hyperf AbstractProcess 清理 Timer 和唤醒 `WORKER_EXIT`。不额外接管 HTTP Worker，不强制取消业务协程、不提前 ACK、不因停止信号重发业务请求。
 
 默认 RedisDriver 通过 dependencies 解析为包内子类，仅包装框架回调并在 `consume()` 外等待在途回调协程结束（包含业务 defer）；默认 AMQP Consumer 通过框架 PriorityDefinition 接入包内 factory/子类，将约五秒的并发收尾限制改为等待回调协程完成，包含业务 defer。两者都不重写消费/确认/异常恢复/重试逻辑，不设内部退出硬上限，也覆盖框架因消息数量上限触发的正常收尾。`BaseConsumer::waitTimeout=1` 让 AMQP 空闲 channel 定期检查停止标记；这是消费等待检查间隔，不是心跳、业务处理超时或重试间隔，业务子类显式设置仍优先。
+
+Redis 收尾按每次 `consume()` 的协程单独计数，从回调准备好、尚在等待并发槽位或子协程启动时就纳入 pending，直到该回调协程的 defer 完成才移出。同一个 driver 的其他 consume 不阻塞本次正常收尾；进程级资源清理仍需等待进程自身 handle 管理的所有 consume。AMQP factory 继续支持继承包内 Factory 的应用覆盖及参数透传，委托到应用 factory 后不再委托给其自身。 自定义 Redis getCallback 装饰器必须执行父类返回的回调；若在调用前抛错或丢弃该回调，pending 无法结束，仍可能等到容器硬上限。协程创建失败、强制取消及无限阻塞也不属于成功收尾保证，应用仍需设置停止宽限。
+
+这里的 defer 保证针对直接任务/回调协程。嵌套 `parallel()` 的 WaitGroup 会在子协程 defer 前完成，`parallel()` 返回不代表子协程 defer 已结束；未被直接任务显式等待的子协程和后台工作不在此计数内。若这些收尾还需 HTTP、AMQP 或锁，应在子工作中用 try/finally 完成必要 IO，或让任务等待一个在全部必要 defer 完成后才发送的完成信号，再返回给框架确认。不要仅凭 `parallel()` 返回判定所有子协程已经收尾。本修复不递归追踪任意子协程，也不改变框架 ACK 时机。
+
+默认 AMQP ConnectionFactory 继续调用父工厂构造连接，只在建连前解析和校验 `params.heartbeat`：省略或 null 默认 **15 秒**；显式 0、负数或非整数抛 `InvalidArgumentException`，在 IO 构造和网络连接之前失败；合法正整数保持不变。该规则同样适用于 `AMQP_HEARTBEAT` 经配置帮助类生成的参数，原来显式配置 0 的应用需要先改配置；`AmqpDbConfig` 会把空字符串环境变量转成0，因此空的 `AMQP_HEARTBEAT` 也应删除或改为正整数。这是与旧配置的兼容性变化，不会静默把 0 改为默认值。
+
+包内 `AmqpDbConfig` 原有默认心跳15秒、读写超时30秒继续保留；工厂也采用相同的15/30秒默认组合。`read_write_timeout` 省略或 null 时补30秒，已有显式值保持不变；IO、连接池和其他参数不改。配置自定义心跳时，建议配套设置 `read_write_timeout`（框架模板为心跳的两倍）；自定义 IO 应遵循其要求，例如 php-amqplib StreamIO 要求至少两倍、SocketIO 要求大于两倍（15秒心跳时需显式配置大于30秒）。省略读写超时的配置现从框架原生3秒改为30秒；对端失联、发布阻塞或退出时 broker 不可达的等待也可能变长，应用应据此配置停止宽限，显式超时不被覆盖。长时间同步阻塞事件循环会阻止心跳发送，业务应选择合适的正数心跳及配套超时，保持协程可调度。
+
+不再添加包内逐连接 WORKER_EXIT watcher、PID 标记或访问框架 protected 退出状态；全部沿用框架正心跳生命周期。HTTP/task worker 和命令也沿用这一框架行为，不额外注册信号或接管退出；WORKER_EXIT 后的后台协程不能假定 AMQP 连接仍可发布。已获准的 cron 延后清理仍会先等已有任务及直接defer完成，再触发资源清理。应用显式覆盖 ConnectionFactory 仍优先；继承包内工厂并调用 parent::make 保留校验，完全改用自有/原生工厂会绕过该规则，需要应用自行遵守正心跳约束。这里不保证框架正心跳协程会在每次连接 close 后立即回收；其原有资源行为未扩展修改。
+
+实际故障回归确认：MQ正常时，重复停止和worker轮换能够先完成任务。MQ持续不响应或网络断连时，当前Hyperf关闭AMQP连接可能等不到关闭回复，随后由Swoole死锁检测结束；退出码0不代表完整关闭，读写超时30秒也不是关闭硬上限。该限制只涉及实际使用AMQP连接的故障退出，本轮未新增强制关闭或重试机制。测试中永久故障是在业务确认后注入，确认前后broker回读均为空；不能据此保证失联期间未确认的业务也绝不重投。
 
 `BaseQueueConsumer` 和包内 `Process\CrontabDispatcherProcess` 的 `recvTimeout=1.0` 仅缩短继承自 Hyperf AbstractProcess 的**内部消息管道读取等待**，不是 Redis 取消息超时、HTTP 请求超时或任务 `handle_timeout`。原 reloadChannels 启动恢复、reloadCount、队列名和 hash tag、retry_seconds、框架五秒重启间隔保持不变。
 
@@ -276,9 +299,9 @@ return [
 
 `CoroutineStrategy` 和应用自定义策略不走提前唤醒，继续按框架分钟边界退出。包内 `CrontabExecutor` 在任何 server/task 锁 IO 之前计入已开始任务，在任务协程所有 finally/defer 完成后移出；调度进程交回 AbstractProcess 清理之前等待计数归零。这样也保护框架在停止后的分钟边界分发出的那一批任务。未到点任务若在等待期间按原时机开始，会一起收尾；清理时仍未开始的任务由框架关闭，不提前执行、不重发。该模式的停止宽限需包含等待分钟边界、已开始任务和五秒重启间隔。
 
-上述计数只覆盖经过默认包内 Executor 的工作；应用覆盖 Executor 或在监听器、AOP、自定义策略中另起未等待的后台协程，需独立评估。默认跨 worker 策略的快速唤醒也会先等本进程已计入的 Executor 任务完成。共享进程的协程服务器模式不提前唤醒，本次没有用真实共享服务器验证它的完整退出流程；不能据此承诺统一十秒退出。
+上述计数只覆盖经过默认包内 Executor 的工作；应用覆盖 Executor 或在监听器、AOP、自定义策略中另起未等待的后台协程，需独立评估。默认跨 worker 策略的快速唤醒也会先等本进程已计入的 Executor 任务完成。接收 worker 若已有包内 Executor 任务，包内 `WorkerExitCallback` 延后父回调的 OnWorkerExit 事件及 WORKER_EXIT 资源清理，直到直接任务及其 finally/defer 完成，以保留锁续期、Memory、HTTP 和 AMQP 连接；延后期间尚未开始的定时任务直接结束，不执行或重发；此分支不打印执行失败日志，而随后由框架资源清理关闭的未到点任务仍沿用框架 failed execution 日志，排障时需区分。仅在这个分支增加 10ms 保活定时器，父回调仍在原生非协程上下文运行，之后保留框架可重复回调的语义。没有在途 cron 时直接走父实现，不增加 HTTP Worker 信号、不改变任务分发或请求处理。保活定时器创建失败会记录错误并回退框架原行为，此时不能保证延后资源清理。应用覆盖该退出回调或 Executor 时需自行保留对应收尾能力。接收 worker 仍受应用的 Swoole `max_wait_time` 约束；充足的容器停止宽限不能替代该 worker 上限，本包不改其默认值。本次验证的 Swoole 6.2.3 在未配置 `max_wait_time` 时底层默认三秒；应用或 server.php 已设置该项时以应用配置为准。共享进程的协程服务器模式不提前唤醒，本次没有用真实共享服务器验证它的完整退出流程；不能据此承诺统一十秒退出。
 
-`ENABLE_CRONTAB` 开启时仍只注册框架 `Hyperf\Crontab\Process\CrontabDispatcherProcess` 标识，dependencies 默认解析为包内子类；关闭开关不注册调度进程。应用自身 dependencies 仍可覆盖调度、Executor、RedisDriver 和 AMQP Consumer；既有 AMQP ConsumerFactory 覆盖及 make() 参数也会保留。自定义 driver、覆盖后的 Consumer 或显式无限 AMQP waitTimeout 不自动获得上述保证。不要重复注册进程或停止处理器。包内不定义 `signal.timeout`，配置合并方式不变。
+`ENABLE_CRONTAB` 开启时仍只注册框架 `Hyperf\Crontab\Process\CrontabDispatcherProcess` 标识，dependencies 默认解析为包内子类；关闭开关不注册调度进程。应用自身 dependencies 仍可覆盖调度、Executor、WorkerExitCallback、ConnectionFactory、RedisDriver 和 AMQP Consumer；既有 AMQP ConsumerFactory 覆盖及 make() 参数也会保留。自定义 driver、覆盖后的 Consumer 或显式无限 AMQP waitTimeout 不自动获得上述保证。不要重复注册进程或停止处理器。包内不定义 `signal.timeout`，配置合并方式不变。
 
 本修复**不保证所有任务十秒内结束**。容器停止宽限应包含最长剩余任务时间、框架五秒重启间隔及调度开销。例如七秒任务刚开始就停止，安全收尾可能需要约十二秒；任务执行三秒后停止，剩余约四秒加五秒间隔才有机会在十秒内退出。十二秒任务配三十秒宽限可完整完成，十秒硬上限可能被 SIGKILL、消息尚未确认。不得通过提前确认、清队列或降低业务超时加速退出。
 
@@ -452,7 +475,7 @@ WebSocket：
 - `REDIS_HEARTBEAT` / `REDIS_MAX_IDLE_TIME`
 - `AMQP_CONNECTION` / `AMQP_MIN_CONNECTION` / `AMQP_MAX_CONNECTION`
 - `AMQP_CONNECT_TIMEOUT` / `AMQP_WAIT_TIMEOUT`
-- `AMQP_READ_WRITE_TIMEOUT` / `AMQP_HEARTBEAT`
+- `AMQP_READ_WRITE_TIMEOUT` / `AMQP_HEARTBEAT`（协议心跳必须为正整数，不能为0；配置帮助类和工厂均默认心跳15秒、读写超时30秒，工厂仅补缺失值）
 - `AMQP_MAX_IDLE_CHANNELS`
 - `CONSUL_SERVER_URI`
 - `RPC_CONNECT_TIMEOUT` / `RPC_RECV_TIMEOUT`

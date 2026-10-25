@@ -8,7 +8,7 @@ use Hyperf\Coroutine\Coroutine;
 
 class RedisDriver extends \Hyperf\AsyncQueue\Driver\RedisDriver
 {
-    private array $runningCallbacks = [];
+    private array $inFlightCallbacks = [];
 
     public function consume(): void
     {
@@ -16,8 +16,8 @@ class RedisDriver extends \Hyperf\AsyncQueue\Driver\RedisDriver
         try {
             parent::consume();
         } finally {
-            // A callback includes ACK/retry and its finally/defer cleanup. Keep timers and connections alive until then.
-            while (($this->concurrent && ! $this->concurrent->isEmpty()) || ($this->runningCallbacks[$owner] ?? 0) > 0) {
+            // Wait only for this consume's prepared/running callbacks, including their ACK/retry and defer cleanup.
+            while (($this->inFlightCallbacks[$owner] ?? 0) > 0) {
                 Coroutine::sleep(0.01);
             }
         }
@@ -27,12 +27,13 @@ class RedisDriver extends \Hyperf\AsyncQueue\Driver\RedisDriver
     {
         $callback = parent::getCallback($data, $message);
         $owner = Coroutine::id();
+        // Account for reserved work before it waits for a Concurrent slot or starts in a child coroutine.
+        $this->inFlightCallbacks[$owner] = ($this->inFlightCallbacks[$owner] ?? 0) + 1;
         return function () use ($callback, $owner) {
-            $this->runningCallbacks[$owner] = ($this->runningCallbacks[$owner] ?? 0) + 1;
             // Concurrent releases its slot before coroutine defer. Register first so business defers finish first.
             Coroutine::defer(function () use ($owner) {
-                if (--$this->runningCallbacks[$owner] === 0) {
-                    unset($this->runningCallbacks[$owner]);
+                if (--$this->inFlightCallbacks[$owner] === 0) {
+                    unset($this->inFlightCallbacks[$owner]);
                 }
             });
             return $callback();

@@ -56,7 +56,9 @@ class ConfigProvider
             'dependencies' => [
                 CrontabDispatcherProcess::class => \Dleno\CommonCore\Process\CrontabDispatcherProcess::class,
                 \Hyperf\Crontab\Strategy\Executor::class => \Dleno\CommonCore\Process\CrontabExecutor::class,
+                \Hyperf\Framework\Bootstrap\WorkerExitCallback::class => \Dleno\CommonCore\Process\WorkerExitCallback::class,
                 \Hyperf\AsyncQueue\Driver\RedisDriver::class => \Dleno\CommonCore\Base\AsyncQueue\RedisDriver::class,
+                \Hyperf\Amqp\ConnectionFactory::class => \Dleno\CommonCore\Base\Amqp\ConnectionFactory::class,
                 // Survive hyperf/amqp's later default binding; application dependencies still take precedence.
                 \Hyperf\Amqp\Consumer::class => new \Hyperf\Di\Definition\PriorityDefinition(
                     \Dleno\CommonCore\Base\Amqp\ConsumerFactory::class,

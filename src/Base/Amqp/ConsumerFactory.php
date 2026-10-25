@@ -14,7 +14,7 @@ class ConsumerFactory
     {
         // Preserve an application's existing factory override as well as its Consumer binding.
         $factory = $container->get(\Hyperf\Amqp\ConsumerFactory::class);
-        if ($factory::class !== \Hyperf\Amqp\ConsumerFactory::class) {
+        if ($factory !== $this && $factory::class !== \Hyperf\Amqp\ConsumerFactory::class) {
             return $factory($container, $parameters);
         }
 
